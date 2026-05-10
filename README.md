@@ -284,6 +284,34 @@ MAILRECON_HTTP_TIMEOUT=10.0
 MAILRECON_DNS_TIMEOUT=5.0
 ```
 
+## HIBP API Key | Chave da API do HIBP
+
+You can get the Have I Been Pwned API key from the official dashboard after purchasing a valid subscription:
+
+Você pode obter a chave da API do Have I Been Pwned no painel oficial após contratar uma assinatura válida:
+
+1. Go to `https://haveibeenpwned.com/API/Key`
+2. Sign in with the account used for the subscription
+3. Open the API key area in the dashboard
+4. Copy the key and place it in your `.env`
+
+1. Acesse `https://haveibeenpwned.com/API/Key`
+2. Entre com a conta usada na assinatura
+3. Abra a área da chave de API no painel
+4. Copie a chave e coloque no seu `.env`
+
+Example:
+
+Exemplo:
+
+```env
+HIBP_API_KEY=your_api_key_here
+```
+
+MailRecon also works without the key when you use `--no-hibp`.
+
+O MailRecon também funciona sem a chave quando você usa `--no-hibp`.
+
 ## Development Notes | Notas de Desenvolvimento
 
 - Keep the CLI thin | Mantenha a CLI fina

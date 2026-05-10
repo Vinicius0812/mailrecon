@@ -17,6 +17,11 @@ app = typer.Typer(
 )
 
 
+@app.callback()
+def main() -> None:
+    """MailRecon command group."""
+
+
 def _build_recon_service(use_hibp: bool) -> ReconService:
     """Compose the services required by the main CLI command."""
     settings = load_settings()

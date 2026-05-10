@@ -29,6 +29,8 @@ def test_cli_shows_help_without_args() -> None:
 
     assert result.exit_code == 0
     assert "Educational CLI for email recon and validation." in result.stdout
+    assert "Commands" in result.stdout
+    assert "analyze" in result.stdout
 
 
 def test_cli_analyze_renders_summary(monkeypatch) -> None:
