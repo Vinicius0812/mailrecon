@@ -209,7 +209,7 @@ Antes de executar os comandos de instalação, clone o repositório e entre na p
 ### Windows
 
 ```powershell
-git clone <repo-url>
+git clone https://github.com/Vinicius0812/mailrecon.git
 cd mailrecon
 python -m venv .venv
 .venv\Scripts\activate
@@ -221,7 +221,7 @@ If your system uses the Python launcher:
 Se o seu sistema usa o Python Launcher:
 
 ```powershell
-git clone <repo-url>
+git clone https://github.com/Vinicius0812/mailrecon.git
 cd mailrecon
 py -3.11 -m venv .venv
 .venv\Scripts\activate
@@ -231,7 +231,7 @@ pip install -e .[dev]
 ### Linux
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Vinicius0812/mailrecon.git
 cd mailrecon
 python3 -m venv .venv
 source .venv/bin/activate
@@ -240,7 +240,7 @@ pip install -e .[dev]
 
 ### What These Commands Do | O Que Esses Comandos Fazem
 
-- `git clone <repo-url>`: downloads the repository | baixa o repositório
+- `git clone https://github.com/Vinicius0812/mailrecon.git`: downloads the repository | baixa o repositório
 - `cd mailrecon`: enters the project folder | entra na pasta do projeto
 - creates the virtual environment | cria o ambiente virtual
 - activates the virtual environment | ativa o ambiente virtual
