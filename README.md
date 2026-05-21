@@ -14,6 +14,7 @@ O projeto é intencionalmente pequeno, ético e adequado para portfólio de cibe
 - Extract and inspect the domain | Extrair e inspecionar o domínio
 - Query DNS and MX records | Consultar registros DNS e MX
 - Optionally query Have I Been Pwned | Consultar opcionalmente o Have I Been Pwned
+- Start reusable OSINT investigations from multiple seed types | Iniciar investigações OSINT reutilizáveis a partir de vários tipos de semente
 - Show a friendly terminal summary | Mostrar um resumo amigável no terminal
 - Export reports as JSON and Markdown | Exportar relatórios em JSON e Markdown
 
@@ -106,6 +107,7 @@ Funcionalidades incluídas no MVP:
 - domain resolution check | verificação se o domínio resolve
 - HIBP integration prepared through environment variables | integração com HIBP preparada via variáveis de ambiente
 - JSON and Markdown export | exportação em JSON e Markdown
+- reusable OSINT investigation workflow with structured evidence | fluxo reutilizável de investigação OSINT com evidências estruturadas
 - friendly terminal output | saída amigável no terminal
 - basic tests | testes básicos
 
@@ -256,12 +258,49 @@ Execute o comando principal de análise:
 mailrecon analyze user@example.com
 ```
 
+Run a structured OSINT investigation:
+
+Execute uma investigação OSINT estruturada:
+
+```bash
+mailrecon investigate --email user@example.com --domain example.com --context "vendor review" --no-hibp
+```
+
+Seed an investigation from multiple inputs:
+
+Inicie uma investigação a partir de múltiplas entradas:
+
+```bash
+mailrecon investigate \
+  --name "Alice Smith" \
+  --username asmith \
+  --domain example.com \
+  --organization "Example Org" \
+  --context "Initial OSINT triage"
+```
+
 Export reports when needed:
 
 Exporte relatórios quando precisar:
 
 ```bash
 mailrecon analyze user@example.com --json-out reports/result.json --md-out reports/result.md
+```
+
+Export a structured investigation report:
+
+Exporte um relatório estruturado de investigação:
+
+```bash
+mailrecon investigate --email user@example.com --domain example.com --json-out reports/investigation.json --md-out reports/investigation.md
+```
+
+Reveal full email addresses in the terminal summary and Markdown report when needed:
+
+Mostre e-mails completos no resumo do terminal e no relatório Markdown quando necessário:
+
+```bash
+mailrecon investigate --email user@example.com --domain example.com --md-out reports/investigation.md --reveal-emails
 ```
 
 Disable the HIBP request explicitly:
@@ -311,6 +350,16 @@ HIBP_API_KEY=your_api_key_here
 MailRecon also works without the key when you use `--no-hibp`.
 
 O MailRecon também funciona sem a chave quando você usa `--no-hibp`.
+
+## Investigation Notes | Notas de Investigação
+
+MailRecon treats investigation results as OSINT leads, not definitive proof. The investigation workflow records source, reference, collection date, method, confidence, and observations for each evidence item, while masking sensitive email details in human-readable outputs when practical.
+
+O MailRecon trata resultados de investigação como indícios OSINT, não como prova definitiva. O fluxo de investigação registra fonte, referência, data de coleta, método, confiança e observações para cada evidência, além de mascarar detalhes sensíveis de e-mails nas saídas legíveis sempre que possível.
+
+If you need full email addresses in the human-readable investigation output, use `--reveal-emails`. JSON exports already retain the full structured values.
+
+Se você precisar de e-mails completos na saída legível da investigação, use `--reveal-emails`. As exportações JSON já mantêm os valores estruturados completos.
 
 ## Development Notes | Notas de Desenvolvimento
 

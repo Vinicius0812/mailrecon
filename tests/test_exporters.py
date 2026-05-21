@@ -1,7 +1,19 @@
 import json
 
-from mailrecon.core.models import DnsLookupResult, HibpResult, ReconResult
-from mailrecon.reporting.exporters import export_json, export_markdown
+from mailrecon.core.models import (
+    DnsLookupResult,
+    EmailCandidate,
+    EvidenceRecord,
+    HibpResult,
+    InvestigationInput,
+    InvestigationResult,
+    ReconResult,
+)
+from mailrecon.reporting.exporters import (
+    export_investigation_markdown,
+    export_json,
+    export_markdown,
+)
 
 
 def build_result() -> ReconResult:
@@ -18,6 +30,43 @@ def build_result() -> ReconResult:
             queried=False,
             status="missing_api_key",
         ),
+    )
+
+
+def build_investigation_result() -> InvestigationResult:
+    return InvestigationResult(
+        query=InvestigationInput(
+            emails=["user@example.com"],
+            usernames=["user"],
+            domains=["example.com"],
+            contexts=["training scenario"],
+        ),
+        candidate_emails=[
+            EmailCandidate(
+                email="user@example.com",
+                masked_email="u**r@example.com",
+                domain="example.com",
+                source="seed_email",
+                confidence="high",
+                status="valid",
+            )
+        ],
+        evidences=[
+            EvidenceRecord(
+                title="Seed email",
+                category="seed",
+                source="investigator_input",
+                reference="CLI input",
+                collected_at="2026-05-21T12:00:00+00:00",
+                method="manual_input",
+                confidence="high",
+                summary="The investigation started with email: u**r@example.com",
+            )
+        ],
+        findings=["The investigation organized 1 candidate email(s) for safe review."],
+        risks=["Public breach exposure may increase phishing risk."],
+        pivot_suggestions=["Review naming patterns."],
+        limitations=["Results are OSINT indicators."],
     )
 
 
@@ -40,3 +89,27 @@ def test_export_markdown_writes_file(tmp_path) -> None:
     assert "# MailRecon Report" in content
     assert "- Email: user@example.com" in content
     assert "- HIBP queried: no" in content
+
+
+def test_export_investigation_markdown_writes_file(tmp_path) -> None:
+    output = tmp_path / "investigation.md"
+
+    export_investigation_markdown(build_investigation_result(), output)
+
+    content = output.read_text(encoding="utf-8")
+    assert "# MailRecon Investigation Report" in content
+    assert "## Candidate emails" in content
+    assert "u**r@example.com" in content
+
+
+def test_export_investigation_markdown_can_reveal_emails(tmp_path) -> None:
+    output = tmp_path / "investigation-revealed.md"
+
+    export_investigation_markdown(
+        build_investigation_result(),
+        output,
+        mask_sensitive=False,
+    )
+
+    content = output.read_text(encoding="utf-8")
+    assert "user@example.com" in content

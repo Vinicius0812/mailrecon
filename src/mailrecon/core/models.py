@@ -40,3 +40,65 @@ class ReconResult:
     def to_dict(self) -> dict:
         """Convert the result to a serializable dictionary."""
         return asdict(self)
+
+
+@dataclass(slots=True)
+class InvestigationInput:
+    """Structured input for a reusable OSINT investigation."""
+
+    names: list[str] = field(default_factory=list)
+    emails: list[str] = field(default_factory=list)
+    usernames: list[str] = field(default_factory=list)
+    domains: list[str] = field(default_factory=list)
+    organizations: list[str] = field(default_factory=list)
+    contexts: list[str] = field(default_factory=list)
+    candidate_emails: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class EvidenceRecord:
+    """Captures one OSINT evidence item and its provenance."""
+
+    title: str
+    category: str
+    source: str
+    reference: str
+    collected_at: str
+    method: str
+    confidence: str
+    summary: str
+    observations: str | None = None
+
+
+@dataclass(slots=True)
+class EmailCandidate:
+    """Represents one email candidate discovered during an investigation."""
+
+    email: str
+    masked_email: str
+    domain: str
+    source: str
+    confidence: str
+    status: str
+    notes: list[str] = field(default_factory=list)
+    analysis: ReconResult | None = None
+
+
+@dataclass(slots=True)
+class InvestigationResult:
+    """Aggregates reusable OSINT investigation data around email pivots."""
+
+    query: InvestigationInput
+    candidate_emails: list[EmailCandidate]
+    evidences: list[EvidenceRecord]
+    findings: list[str]
+    risks: list[str]
+    pivot_suggestions: list[str]
+    limitations: list[str]
+    generated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+    def to_dict(self) -> dict:
+        """Convert the investigation result to a serializable dictionary."""
+        return asdict(self)
