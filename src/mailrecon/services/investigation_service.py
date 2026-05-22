@@ -10,6 +10,7 @@ from mailrecon.core.models import (
     EvidenceRecord,
     InvestigationInput,
     InvestigationResult,
+    ProfilePivot,
 )
 from mailrecon.core.validators import (
     mask_email_address,
@@ -34,6 +35,7 @@ class InvestigationService:
 
         evidences = self._build_seed_evidences(query)
         candidate_emails = self._build_candidate_emails(query)
+        profile_pivots = self._build_profile_pivots(query, candidate_emails)
         findings: list[str] = []
         risks: list[str] = []
         pivot_suggestions: list[str] = []
@@ -83,6 +85,11 @@ class InvestigationService:
                 "No candidate emails were produced from the provided seeds, so email-centric pivots are limited."
             )
 
+        if profile_pivots:
+            findings.append(
+                f"The investigation generated {len(profile_pivots)} safe public-profile pivot suggestion(s) for manual review."
+            )
+
         pivot_suggestions.extend(self._build_pivot_suggestions(query, candidate_emails))
         findings = self._dedupe_preserve_order(findings)
         risks = self._dedupe_preserve_order(risks)
@@ -92,6 +99,7 @@ class InvestigationService:
         return InvestigationResult(
             query=query,
             candidate_emails=candidate_emails,
+            profile_pivots=profile_pivots,
             evidences=evidences,
             findings=findings,
             risks=risks,
@@ -184,6 +192,33 @@ class InvestigationService:
                     deduped[candidate.email] = candidate
 
         return list(deduped.values())
+
+    def _build_profile_pivots(
+        self,
+        query: InvestigationInput,
+        candidates: list[EmailCandidate],
+    ) -> list[ProfilePivot]:
+        """Generate safe public-profile pivots for manual OSINT review."""
+        handles = OrderedDict[str, None]()
+        for username in query.usernames:
+            cleaned = username.strip().lower()
+            if cleaned:
+                handles[cleaned] = None
+
+        for name in query.names:
+            for pattern in self._infer_name_patterns(name):
+                handles[pattern] = None
+
+        for candidate in candidates:
+            if candidate.status == "valid":
+                local_part = candidate.email.partition("@")[0].lower()
+                handles[local_part] = None
+
+        pivots: list[ProfilePivot] = []
+        for handle in handles:
+            pivots.extend(self._platform_pivots_for_handle(handle))
+
+        return pivots
 
     def _infer_name_patterns(self, name: str) -> list[str]:
         """Create small, safe candidate patterns from a name."""
@@ -313,7 +348,74 @@ class InvestigationService:
                 "Correlate the organization seed with public documents or breach references, treating all matches as OSINT leads rather than proof."
             )
 
+        if query.usernames or candidates:
+            pivots.append(
+                "Review the generated public-profile pivot URLs for platforms such as LinkedIn, Instagram, Facebook, GitHub, X, Spotify, Telegram, and Gravatar."
+            )
+
         return pivots
+
+    def _platform_pivots_for_handle(self, handle: str) -> list[ProfilePivot]:
+        """Create public-profile pivot suggestions for a single handle."""
+        platform_specs = [
+            (
+                "LinkedIn",
+                f"https://www.linkedin.com/in/{handle}/",
+                f"https://www.google.com/search?q=site%3Alinkedin.com%2Fin+%22{handle}%22",
+            ),
+            (
+                "Instagram",
+                f"https://www.instagram.com/{handle}/",
+                f"https://www.google.com/search?q=site%3Ainstagram.com+%22{handle}%22",
+            ),
+            (
+                "Facebook",
+                f"https://www.facebook.com/{handle}",
+                f"https://www.google.com/search?q=site%3Afacebook.com+%22{handle}%22",
+            ),
+            (
+                "GitHub",
+                f"https://github.com/{handle}",
+                f"https://www.google.com/search?q=site%3Agithub.com+%22{handle}%22",
+            ),
+            (
+                "X",
+                f"https://x.com/{handle}",
+                f"https://www.google.com/search?q=site%3Ax.com+%22{handle}%22",
+            ),
+            (
+                "Spotify",
+                f"https://open.spotify.com/search/{handle}",
+                f"https://www.google.com/search?q=site%3Aopen.spotify.com+%22{handle}%22",
+            ),
+            (
+                "Telegram",
+                f"https://t.me/{handle}",
+                f"https://www.google.com/search?q=site%3At.me+%22{handle}%22",
+            ),
+            (
+                "Gravatar",
+                f"https://gravatar.com/{handle}",
+                f"https://www.google.com/search?q=site%3Agravatar.com+%22{handle}%22",
+            ),
+        ]
+
+        return [
+            ProfilePivot(
+                platform=platform,
+                handle=handle,
+                profile_url=profile_url,
+                search_url=search_url,
+                source="public_profile_pivot",
+                confidence="low",
+                status="manual_review",
+                notes=[
+                    "Public URL generated for safe manual review.",
+                    "Treat matches as possible correlations, not proof of identity ownership.",
+                ],
+            )
+            for platform, profile_url, search_url in platform_specs
+        ]
 
     def _build_limitations(self) -> list[str]:
         """Return standard investigation limitations for ethical OSINT use."""

@@ -279,6 +279,10 @@ mailrecon investigate \
   --context "Initial OSINT triage"
 ```
 
+The investigation flow also generates safe public-profile pivots for manual review on platforms such as LinkedIn, Instagram, Facebook, GitHub, X, Spotify, Telegram, and Gravatar.
+
+O fluxo de investigação também gera pivôs seguros de perfis públicos para revisão manual em plataformas como LinkedIn, Instagram, Facebook, GitHub, X, Spotify, Telegram e Gravatar.
+
 Export reports when needed:
 
 Exporte relatórios quando precisar:
@@ -301,6 +305,14 @@ Mostre e-mails completos no resumo do terminal e no relatório Markdown quando n
 
 ```bash
 mailrecon investigate --email user@example.com --domain example.com --md-out reports/investigation.md --reveal-emails
+```
+
+Generate the Markdown report in Brazilian Portuguese:
+
+Gere o relatório Markdown em português do Brasil:
+
+```bash
+mailrecon investigate --email user@example.com --domain example.com --md-out reports/investigation-ptbr.md --markdown-language pt-br
 ```
 
 Disable the HIBP request explicitly:
@@ -360,6 +372,10 @@ O MailRecon trata resultados de investigação como indícios OSINT, não como p
 If you need full email addresses in the human-readable investigation output, use `--reveal-emails`. JSON exports already retain the full structured values.
 
 Se você precisar de e-mails completos na saída legível da investigação, use `--reveal-emails`. As exportações JSON já mantêm os valores estruturados completos.
+
+The generated profile pivots are only public navigation or search suggestions for manual review. They do not confirm account ownership and should never be used for login attempts, credential testing, or recovery-flow abuse.
+
+Os pivôs de perfil gerados são apenas sugestões públicas de navegação ou busca para revisão manual. Eles não confirmam propriedade de conta e nunca devem ser usados para tentativa de login, teste de credenciais ou abuso de fluxos de recuperação.
 
 ## Development Notes | Notas de Desenvolvimento
 

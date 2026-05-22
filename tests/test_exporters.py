@@ -7,6 +7,7 @@ from mailrecon.core.models import (
     HibpResult,
     InvestigationInput,
     InvestigationResult,
+    ProfilePivot,
     ReconResult,
 )
 from mailrecon.reporting.exporters import (
@@ -49,6 +50,18 @@ def build_investigation_result() -> InvestigationResult:
                 source="seed_email",
                 confidence="high",
                 status="valid",
+            )
+        ],
+        profile_pivots=[
+            ProfilePivot(
+                platform="LinkedIn",
+                handle="user",
+                profile_url="https://www.linkedin.com/in/user/",
+                search_url="https://www.google.com/search?q=site%3Alinkedin.com%2Fin+%22user%22",
+                source="public_profile_pivot",
+                confidence="low",
+                status="manual_review",
+                notes=["Public URL generated for safe manual review."],
             )
         ],
         evidences=[
@@ -100,6 +113,7 @@ def test_export_investigation_markdown_writes_file(tmp_path) -> None:
     assert "# MailRecon Investigation Report" in content
     assert "## Candidate emails" in content
     assert "u**r@example.com" in content
+    assert "## Public-profile pivots" in content
 
 
 def test_export_investigation_markdown_can_reveal_emails(tmp_path) -> None:
@@ -113,3 +127,17 @@ def test_export_investigation_markdown_can_reveal_emails(tmp_path) -> None:
 
     content = output.read_text(encoding="utf-8")
     assert "user@example.com" in content
+
+
+def test_export_investigation_markdown_supports_pt_br(tmp_path) -> None:
+    output = tmp_path / "investigation-ptbr.md"
+
+    export_investigation_markdown(
+        build_investigation_result(),
+        output,
+        language="pt-br",
+    )
+
+    content = output.read_text(encoding="utf-8")
+    assert "# Relatório de Investigação MailRecon" in content
+    assert "## Pivôs de perfis públicos" in content

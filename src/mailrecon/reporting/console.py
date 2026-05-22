@@ -51,6 +51,7 @@ def render_investigation_summary(
         f"- Seed usernames: {len(result.query.usernames)}",
         f"- Seed domains: {len(result.query.domains)}",
         f"- Candidate emails: {len(result.candidate_emails)}",
+        f"- Profile pivots: {len(result.profile_pivots)}",
         f"- Valid candidates: {len(valid_candidates)}",
         f"- Exposure signals: {len(exposed_candidates)}",
         f"- Evidence records: {len(result.evidences)}",

@@ -146,6 +146,11 @@ def investigate(
         "--md-out",
         help="Write the investigation report as Markdown.",
     ),
+    markdown_language: str = typer.Option(
+        "en",
+        "--markdown-language",
+        help="Markdown report language: en or pt-br.",
+    ),
     reveal_emails: bool = typer.Option(
         False,
         "--reveal-emails",
@@ -189,5 +194,6 @@ def investigate(
             result,
             md_out,
             mask_sensitive=not reveal_emails,
+            language=markdown_language.lower(),
         )
         typer.secho(f"Markdown report saved to: {export_path}", fg=typer.colors.GREEN)

@@ -8,6 +8,7 @@ from mailrecon.core.models import (
     HibpResult,
     InvestigationInput,
     InvestigationResult,
+    ProfilePivot,
     ReconResult,
 )
 
@@ -42,6 +43,18 @@ class FakeInvestigationService:
                     source="seed_email",
                     confidence="high",
                     status="valid",
+                )
+            ],
+            profile_pivots=[
+                ProfilePivot(
+                    platform="LinkedIn",
+                    handle="user",
+                    profile_url="https://www.linkedin.com/in/user/",
+                    search_url="https://www.google.com/search?q=site%3Alinkedin.com%2Fin+%22user%22",
+                    source="public_profile_pivot",
+                    confidence="low",
+                    status="manual_review",
+                    notes=["Public URL generated for safe manual review."],
                 )
             ],
             evidences=[
@@ -130,6 +143,7 @@ def test_cli_investigate_renders_summary(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "Investigation summary:" in result.stdout
     assert "- Candidate emails: 1" in result.stdout
+    assert "- Profile pivots: 1" in result.stdout
     assert "u**r@example.com" in result.stdout
 
 

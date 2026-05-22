@@ -85,11 +85,26 @@ class EmailCandidate:
 
 
 @dataclass(slots=True)
+class ProfilePivot:
+    """Represents a safe public-profile pivot suggestion."""
+
+    platform: str
+    handle: str
+    profile_url: str
+    search_url: str
+    source: str
+    confidence: str
+    status: str
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class InvestigationResult:
     """Aggregates reusable OSINT investigation data around email pivots."""
 
     query: InvestigationInput
     candidate_emails: list[EmailCandidate]
+    profile_pivots: list[ProfilePivot]
     evidences: list[EvidenceRecord]
     findings: list[str]
     risks: list[str]

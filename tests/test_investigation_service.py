@@ -53,6 +53,8 @@ def test_investigation_service_builds_candidates_from_multiple_seeds() -> None:
     assert "alice@example.com" in emails
     assert "asmith@example.com" in emails
     assert "alice.smith@example.com" in emails
+    assert result.profile_pivots
+    assert any(pivot.platform == "LinkedIn" for pivot in result.profile_pivots)
     assert result.findings
     assert result.evidences
     assert result.pivot_suggestions

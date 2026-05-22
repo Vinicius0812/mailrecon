@@ -65,76 +65,91 @@ def export_investigation_markdown(
     result: InvestigationResult,
     output_path: str | Path,
     mask_sensitive: bool = True,
+    language: str = "en",
 ) -> Path:
     """Export an investigation result as Markdown."""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    copy = _markdown_copy(language)
+
     lines = [
-        "# MailRecon Investigation Report",
+        copy["title"],
         "",
-        f"- Generated at: {result.generated_at}",
-        f"- Seed emails: {len(result.query.emails)}",
-        f"- Seed usernames: {len(result.query.usernames)}",
-        f"- Seed domains: {len(result.query.domains)}",
-        f"- Candidate emails: {len(result.candidate_emails)}",
+        f"- {copy['generated_at']}: {result.generated_at}",
+        f"- {copy['seed_emails']}: {len(result.query.emails)}",
+        f"- {copy['seed_usernames']}: {len(result.query.usernames)}",
+        f"- {copy['seed_domains']}: {len(result.query.domains)}",
+        f"- {copy['candidate_emails']}: {len(result.candidate_emails)}",
+        f"- {copy['profile_pivots']}: {len(result.profile_pivots)}",
     ]
 
     if result.query.names:
-        lines.extend(["", "## Names", ""])
+        lines.extend(["", copy["names_heading"], ""])
         lines.extend(f"- {name}" for name in result.query.names)
 
     if result.query.organizations:
-        lines.extend(["", "## Organizations", ""])
+        lines.extend(["", copy["organizations_heading"], ""])
         lines.extend(f"- {organization}" for organization in result.query.organizations)
 
     if result.query.contexts:
-        lines.extend(["", "## Context", ""])
+        lines.extend(["", copy["context_heading"], ""])
         lines.extend(f"- {context}" for context in result.query.contexts)
 
     if result.candidate_emails:
-        lines.extend(["", "## Candidate emails", ""])
+        lines.extend(["", copy["candidate_emails_heading"], ""])
         for candidate in result.candidate_emails:
             display_email = candidate.masked_email if mask_sensitive else candidate.email
             lines.append(
-                f"- {display_email} | status={candidate.status} | source={candidate.source} | confidence={candidate.confidence}"
+                f"- {display_email} | {copy['status']}={candidate.status} | {copy['source']}={candidate.source} | {copy['confidence']}={candidate.confidence}"
             )
             for note in candidate.notes:
-                lines.append(f"  - note: {note}")
+                lines.append(f"  - {copy['note']}: {note}")
+
+    if result.profile_pivots:
+        lines.extend(["", copy["profile_pivots_heading"], ""])
+        for pivot in result.profile_pivots:
+            lines.append(
+                f"- {pivot.platform} | handle={pivot.handle} | {copy['status']}={pivot.status} | {copy['confidence']}={pivot.confidence}"
+            )
+            lines.append(f"  - {copy['profile_url']}: {pivot.profile_url}")
+            lines.append(f"  - {copy['search_url']}: {pivot.search_url}")
+            for note in pivot.notes:
+                lines.append(f"  - {copy['note']}: {note}")
 
     if result.findings:
-        lines.extend(["", "## Findings", ""])
+        lines.extend(["", copy["findings_heading"], ""])
         lines.extend(
             f"- {_mask_text(finding) if mask_sensitive else finding}"
             for finding in result.findings
         )
 
     if result.evidences:
-        lines.extend(["", "## Evidence", ""])
+        lines.extend(["", copy["evidence_heading"], ""])
         for evidence in result.evidences:
             lines.append(
-                f"- {evidence.title} | source={evidence.source} | method={evidence.method} | confidence={evidence.confidence}"
+                f"- {evidence.title} | {copy['source']}={evidence.source} | {copy['method']}={evidence.method} | {copy['confidence']}={evidence.confidence}"
             )
             summary = _mask_text(evidence.summary) if mask_sensitive else evidence.summary
-            lines.append(f"  - summary: {summary}")
-            lines.append(f"  - reference: {evidence.reference}")
-            lines.append(f"  - collected_at: {evidence.collected_at}")
+            lines.append(f"  - {copy['summary']}: {summary}")
+            lines.append(f"  - {copy['reference']}: {evidence.reference}")
+            lines.append(f"  - {copy['collected_at']}: {evidence.collected_at}")
             if evidence.observations:
-                lines.append(f"  - observations: {evidence.observations}")
+                lines.append(f"  - {copy['observations']}: {evidence.observations}")
 
     if result.risks:
-        lines.extend(["", "## Risks", ""])
+        lines.extend(["", copy["risks_heading"], ""])
         lines.extend(
             f"- {_mask_text(risk) if mask_sensitive else risk}"
             for risk in result.risks
         )
 
     if result.pivot_suggestions:
-        lines.extend(["", "## Pivot suggestions", ""])
+        lines.extend(["", copy["pivot_suggestions_heading"], ""])
         lines.extend(f"- {pivot}" for pivot in result.pivot_suggestions)
 
     if result.limitations:
-        lines.extend(["", "## Limitations", ""])
+        lines.extend(["", copy["limitations_heading"], ""])
         lines.extend(f"- {limitation}" for limitation in result.limitations)
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -166,3 +181,69 @@ def _mask_text(text: str) -> str:
 
     flush()
     return "".join(parts)
+
+
+def _markdown_copy(language: str) -> dict[str, str]:
+    """Return localized copy for investigation Markdown exports."""
+    if language == "pt-br":
+        return {
+            "title": "# Relatório de Investigação MailRecon",
+            "generated_at": "Gerado em",
+            "seed_emails": "E-mails de origem",
+            "seed_usernames": "Usernames de origem",
+            "seed_domains": "Domínios de origem",
+            "candidate_emails": "E-mails candidatos",
+            "profile_pivots": "Pivôs de perfis públicos",
+            "names_heading": "## Nomes",
+            "organizations_heading": "## Organizações",
+            "context_heading": "## Contexto",
+            "candidate_emails_heading": "## E-mails candidatos",
+            "profile_pivots_heading": "## Pivôs de perfis públicos",
+            "findings_heading": "## Achados",
+            "evidence_heading": "## Evidências",
+            "risks_heading": "## Riscos",
+            "pivot_suggestions_heading": "## Sugestões de pivô",
+            "limitations_heading": "## Limitações",
+            "status": "status",
+            "source": "fonte",
+            "confidence": "confianca",
+            "note": "nota",
+            "profile_url": "url_perfil",
+            "search_url": "url_busca",
+            "method": "metodo",
+            "summary": "resumo",
+            "reference": "referencia",
+            "collected_at": "coletado_em",
+            "observations": "observacoes",
+        }
+
+    return {
+        "title": "# MailRecon Investigation Report",
+        "generated_at": "Generated at",
+        "seed_emails": "Seed emails",
+        "seed_usernames": "Seed usernames",
+        "seed_domains": "Seed domains",
+        "candidate_emails": "Candidate emails",
+        "profile_pivots": "Public-profile pivots",
+        "names_heading": "## Names",
+        "organizations_heading": "## Organizations",
+        "context_heading": "## Context",
+        "candidate_emails_heading": "## Candidate emails",
+        "profile_pivots_heading": "## Public-profile pivots",
+        "findings_heading": "## Findings",
+        "evidence_heading": "## Evidence",
+        "risks_heading": "## Risks",
+        "pivot_suggestions_heading": "## Pivot suggestions",
+        "limitations_heading": "## Limitations",
+        "status": "status",
+        "source": "source",
+        "confidence": "confidence",
+        "note": "note",
+        "profile_url": "profile_url",
+        "search_url": "search_url",
+        "method": "method",
+        "summary": "summary",
+        "reference": "reference",
+        "collected_at": "collected_at",
+        "observations": "observations",
+    }
