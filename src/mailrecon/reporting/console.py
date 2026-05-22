@@ -11,14 +11,15 @@ def render_summary(result: ReconResult) -> str:
     breach_count = len(result.hibp.breaches)
 
     lines = [
-        f"Email: {result.email}",
-        f"Domain: {result.domain}",
-        f"Format valid: {'yes' if result.is_valid else 'no'}",
-        f"Domain resolves: {resolves}",
-        f"A records: {', '.join(result.dns.a_records) if result.dns.a_records else 'none'}",
-        f"MX records found: {mx_found}",
-        f"MX hosts: {', '.join(result.dns.mx_records) if result.dns.mx_records else 'none'}",
-        f"HIBP status: {result.hibp.status}",
+        "=== MailRecon Analysis ===",
+        f"Email              : {result.email}",
+        f"Domain             : {result.domain}",
+        f"Format valid       : {'yes' if result.is_valid else 'no'}",
+        f"Domain resolves    : {resolves}",
+        f"A records          : {', '.join(result.dns.a_records) if result.dns.a_records else 'none'}",
+        f"MX records found   : {mx_found}",
+        f"MX hosts           : {', '.join(result.dns.mx_records) if result.dns.mx_records else 'none'}",
+        f"HIBP status        : {result.hibp.status}",
     ]
 
     if result.hibp.queried:
@@ -46,15 +47,18 @@ def render_investigation_summary(
     ]
 
     lines = [
-        "Investigation summary:",
-        f"- Seed emails: {len(result.query.emails)}",
-        f"- Seed usernames: {len(result.query.usernames)}",
-        f"- Seed domains: {len(result.query.domains)}",
-        f"- Candidate emails: {len(result.candidate_emails)}",
-        f"- Profile pivots: {len(result.profile_pivots)}",
-        f"- Valid candidates: {len(valid_candidates)}",
-        f"- Exposure signals: {len(exposed_candidates)}",
-        f"- Evidence records: {len(result.evidences)}",
+        "=== MailRecon Investigation ===",
+        f"Overall confidence : {result.overall_confidence_score}/100 {_render_score_bar(result.overall_confidence_score)}",
+        "",
+        "Overview",
+        f"  Seed emails      : {len(result.query.emails)}",
+        f"  Seed usernames   : {len(result.query.usernames)}",
+        f"  Seed domains     : {len(result.query.domains)}",
+        f"  Candidate emails : {len(result.candidate_emails)}",
+        f"  Profile pivots   : {len(result.profile_pivots)}",
+        f"  Valid candidates : {len(valid_candidates)}",
+        f"  Exposure signals : {len(exposed_candidates)}",
+        f"  Evidence records : {len(result.evidences)}",
     ]
 
     if valid_candidates:
@@ -66,12 +70,45 @@ def render_investigation_summary(
             )
             for candidate in valid_candidates[:5]
         )
-        lines.append(f"- Candidate preview: {preview}")
+        lines.extend(["", "Candidate preview", f"  {preview}"])
 
     if result.findings:
-        lines.append(f"- Top finding: {result.findings[0]}")
+        lines.extend(["", "Top finding", f"  {result.findings[0]}"])
 
     if result.risks:
-        lines.append(f"- Primary risk: {result.risks[0]}")
+        lines.extend(["", "Primary risk", f"  {result.risks[0]}"])
+
+    if result.profile_pivots:
+        lines.extend(["", "Platform preview"])
+        for pivot in result.profile_pivots[:5]:
+            lines.append(
+                f"  {pivot.platform:<10} handle={pivot.handle} score={pivot.confidence_score}/100 status={pivot.resolution_status}"
+            )
+
+        strongest_links = sorted(
+            result.profile_pivots,
+            key=lambda pivot: (-pivot.confidence_score, pivot.platform, pivot.handle),
+        )[:5]
+        lines.extend(["", "Most trusted platform links"])
+        for pivot in strongest_links:
+            lines.append(
+                f"  {pivot.platform:<10} {pivot.profile_url} (score={pivot.confidence_score}/100, status={pivot.resolution_status})"
+            )
+
+    if result.refinement_file_path:
+        lines.extend(
+            [
+                "",
+                "Refinement",
+                f"  Excluded links   : {len(result.refinement_excluded_links)}",
+                f"  State file       : {result.refinement_file_path}",
+            ]
+        )
 
     return "\n".join(lines)
+
+
+def _render_score_bar(score: int) -> str:
+    """Render a small ASCII score bar."""
+    filled = max(0, min(10, round(score / 10)))
+    return "[" + ("#" * filled) + ("-" * (10 - filled)) + "]"

@@ -15,6 +15,7 @@ O projeto é intencionalmente pequeno, ético e adequado para portfólio de cibe
 - Query DNS and MX records | Consultar registros DNS e MX
 - Optionally query Have I Been Pwned | Consultar opcionalmente o Have I Been Pwned
 - Start reusable OSINT investigations from multiple seed types | Iniciar investigações OSINT reutilizáveis a partir de vários tipos de semente
+- Score investigation confidence and prioritize leads | Gerar score de confiança da investigação e priorizar leads
 - Show a friendly terminal summary | Mostrar um resumo amigável no terminal
 - Export reports as JSON and Markdown | Exportar relatórios em JSON e Markdown
 
@@ -108,6 +109,7 @@ Funcionalidades incluídas no MVP:
 - HIBP integration prepared through environment variables | integração com HIBP preparada via variáveis de ambiente
 - JSON and Markdown export | exportação em JSON e Markdown
 - reusable OSINT investigation workflow with structured evidence | fluxo reutilizável de investigação OSINT com evidências estruturadas
+- reusable confidence scoring for candidates, pivots, and evidence | score reutilizável de confiança para candidatos, pivôs e evidências
 - friendly terminal output | saída amigável no terminal
 - basic tests | testes básicos
 
@@ -266,6 +268,14 @@ Execute uma investigação OSINT estruturada:
 mailrecon investigate --email user@example.com --domain example.com --context "vendor review" --no-hibp
 ```
 
+Add safe public-profile resolution checks:
+
+Adicione checagens seguras de perfis públicos:
+
+```bash
+mailrecon investigate --username asmith --domain example.com --check-public-profiles
+```
+
 Seed an investigation from multiple inputs:
 
 Inicie uma investigação a partir de múltiplas entradas:
@@ -282,6 +292,18 @@ mailrecon investigate \
 The investigation flow also generates safe public-profile pivots for manual review on platforms such as LinkedIn, Instagram, Facebook, GitHub, X, Spotify, Telegram, and Gravatar.
 
 O fluxo de investigação também gera pivôs seguros de perfis públicos para revisão manual em plataformas como LinkedIn, Instagram, Facebook, GitHub, X, Spotify, Telegram e Gravatar.
+
+The terminal summary also highlights the most trusted platform links generated during the investigation to speed up manual review.
+
+O resumo no terminal também destaca os links de plataforma com maior confiança gerados durante a investigação para acelerar a revisão manual.
+
+MailRecon also writes a temporary refinement file for the latest investigation at `.mailrecon-temp/last-investigation-refinement.json`. Add disproved profile links to `excluded_profile_urls` and rerun the same investigation to hide those links from the visible profile sections.
+
+O MailRecon também grava um arquivo temporário de refinamento para a última investigação em `.mailrecon-temp/last-investigation-refinement.json`. Adicione links de perfil que já foram descartados em `excluded_profile_urls` e execute novamente a mesma investigação para ocultar esses links das seções visíveis de perfis.
+
+That temporary file also stores the latest investigation parameters, so you can reuse them with a single command.
+
+Esse arquivo temporário também guarda os parâmetros da última investigação, para que você possa reutilizá-los com um único comando.
 
 Export reports when needed:
 
@@ -313,6 +335,38 @@ Gere o relatório Markdown em português do Brasil:
 
 ```bash
 mailrecon investigate --email user@example.com --domain example.com --md-out reports/investigation-ptbr.md --markdown-language pt-br
+```
+
+Run the interactive mode:
+
+Execute o modo interativo:
+
+```bash
+mailrecon interactive --md-out reports/investigation.md
+```
+
+Interactive mode can also ask whether you want to save the result as `.json` and `.md`, including the output paths.
+
+O modo interativo também pode perguntar se você deseja salvar o resultado em `.json` e `.md`, incluindo os caminhos dos arquivos.
+
+During longer runs, the CLI now prints progress messages such as candidate analysis, DNS collection, and public-profile checks so the terminal does not look stuck.
+
+Durante execuções mais longas, a CLI agora mostra mensagens de progresso como análise de candidatos, coleta de DNS e checagens de perfis públicos para que o terminal não pareça travado.
+
+Run the lab-only simulation mode:
+
+Execute o modo de simulação apenas para laboratório:
+
+```bash
+mailrecon lab-admin --handle asmith --scenario found --md-out reports/lab-admin.md
+```
+
+Rerun the latest saved investigation with the current refinement file:
+
+Execute novamente a última investigação salva usando o arquivo de refinamento atual:
+
+```bash
+mailrecon rerun-last
 ```
 
 Disable the HIBP request explicitly:
@@ -376,6 +430,37 @@ Se você precisar de e-mails completos na saída legível da investigação, use
 The generated profile pivots are only public navigation or search suggestions for manual review. They do not confirm account ownership and should never be used for login attempts, credential testing, or recovery-flow abuse.
 
 Os pivôs de perfil gerados são apenas sugestões públicas de navegação ou busca para revisão manual. Eles não confirmam propriedade de conta e nunca devem ser usados para tentativa de login, teste de credenciais ou abuso de fluxos de recuperação.
+
+When `--check-public-profiles` is enabled, MailRecon only resolves the already-generated public URLs and records conservative statuses such as `public_match_possible`, `not_found`, `ambiguous`, `blocked_by_platform`, and `rate_limited`.
+
+Quando `--check-public-profiles` está habilitado, o MailRecon apenas resolve as URLs públicas já geradas e registra status conservadores como `public_match_possible`, `not_found`, `ambiguous`, `blocked_by_platform` e `rate_limited`.
+
+The refinement file is temporary project state and should not be committed. It exists only to help manually prune wrong public-profile links from the latest matching investigation.
+
+O arquivo de refinamento é um estado temporário do projeto e não deve ser versionado. Ele existe apenas para ajudar a podar manualmente links públicos incorretos da última investigação correspondente.
+
+When you run a different investigation, MailRecon refreshes the temporary file with the new parameters. Old exclusions are only reused when the saved query matches the investigation being rerun.
+
+Quando você executa uma investigação diferente, o MailRecon atualiza o arquivo temporário com os novos parâmetros. Exclusões antigas só são reaproveitadas quando a consulta salva corresponde à investigação que está sendo repetida.
+
+The `lab-admin` command is intentionally simulated. It exists so you can practice classification, reporting, and evidence handling in a controlled academic workflow without probing real authentication or recovery flows.
+
+O comando `lab-admin` é intencionalmente simulado. Ele existe para que você possa praticar classificação, relatório e tratamento de evidências em um fluxo acadêmico controlado, sem tocar em fluxos reais de autenticação ou recuperação.
+
+## Confidence Score | Score de Confiança
+
+MailRecon now assigns a simple confidence score from `0` to `100` for candidate emails, public-profile pivots, evidence records, and the overall investigation. The score is meant to help prioritize manual review, not to act as proof.
+
+O MailRecon agora atribui um score simples de `0` a `100` para e-mails candidatos, pivôs de perfis públicos, evidências e para a investigação como um todo. O score serve para ajudar a priorizar a revisão manual, não para funcionar como prova.
+
+High-level interpretation:
+
+Interpretação de alto nível:
+
+- `80-100`: strong lead worth reviewing first | lead forte que merece revisão primeiro
+- `50-79`: useful lead with moderate confidence | lead útil com confiança moderada
+- `1-49`: weak or speculative lead | lead fraco ou especulativo
+- `0`: no meaningful confidence signal | sem sinal de confiança relevante
 
 ## Development Notes | Notas de Desenvolvimento
 

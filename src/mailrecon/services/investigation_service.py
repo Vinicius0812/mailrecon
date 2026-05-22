@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import datetime, timezone
+from typing import Callable
 
 from mailrecon.core.models import (
     EmailCandidate,
@@ -19,22 +20,38 @@ from mailrecon.core.validators import (
     validate_email_input,
 )
 from mailrecon.services.dns_service import DnsService
+from mailrecon.services.profile_check_service import ProfileCheckService
 from mailrecon.services.recon_service import ReconService
 
 
 class InvestigationService:
     """Builds structured OSINT investigations from varied starting points."""
 
-    def __init__(self, recon_service: ReconService, dns_service: DnsService) -> None:
+    def __init__(
+        self,
+        recon_service: ReconService,
+        dns_service: DnsService,
+        profile_check_service: ProfileCheckService | None = None,
+    ) -> None:
         self.recon_service = recon_service
         self.dns_service = dns_service
+        self.profile_check_service = profile_check_service or ProfileCheckService()
 
-    def investigate(self, query: InvestigationInput) -> InvestigationResult:
+    def investigate(
+        self,
+        query: InvestigationInput,
+        check_public_profiles: bool = False,
+        lab_profile_scenario: str | None = None,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> InvestigationResult:
         """Run a structured OSINT investigation using safe public signals."""
+        self._notify(progress_callback, "Preparing investigation seeds...")
         self._ensure_useful_query(query)
 
         evidences = self._build_seed_evidences(query)
+        self._notify(progress_callback, "Building candidate emails...")
         candidate_emails = self._build_candidate_emails(query)
+        self._notify(progress_callback, "Generating public-profile pivots...")
         profile_pivots = self._build_profile_pivots(query, candidate_emails)
         findings: list[str] = []
         risks: list[str] = []
@@ -51,7 +68,11 @@ class InvestigationService:
             if candidate.status != "valid":
                 continue
 
-            analysis = self.recon_service.analyze_email(candidate.email)
+            self._notify(progress_callback, f"Analyzing candidate email: {candidate.email}")
+            analysis = self.recon_service.analyze_email(
+                candidate.email,
+                progress_callback=progress_callback,
+            )
             candidate.analysis = analysis
 
             evidences.extend(self._build_candidate_evidences(candidate))
@@ -73,6 +94,7 @@ class InvestigationService:
                     f"Domain {candidate.domain} did not resolve during collection and may be stale, parked, or mistyped."
                 )
 
+        self._notify(progress_callback, "Collecting domain evidence...")
         for domain in seen_domains:
             evidences.append(self._build_domain_evidence(domain))
 
@@ -90,11 +112,28 @@ class InvestigationService:
                 f"The investigation generated {len(profile_pivots)} safe public-profile pivot suggestion(s) for manual review."
             )
 
+        if check_public_profiles and profile_pivots:
+            self._notify(progress_callback, "Checking public profile URLs...")
+            checked_pivots, profile_evidences = self._check_profile_pivots(
+                profile_pivots=profile_pivots,
+                lab_profile_scenario=lab_profile_scenario,
+            )
+            profile_pivots = checked_pivots
+            evidences.extend(profile_evidences)
+            findings.extend(self._build_profile_findings(profile_pivots))
+            risks.extend(self._build_profile_risks(profile_pivots))
+
         pivot_suggestions.extend(self._build_pivot_suggestions(query, candidate_emails))
         findings = self._dedupe_preserve_order(findings)
         risks = self._dedupe_preserve_order(risks)
         pivot_suggestions = self._dedupe_preserve_order(pivot_suggestions)
         limitations = self._dedupe_preserve_order(limitations)
+        self._notify(progress_callback, "Finalizing investigation summary...")
+        overall_confidence_score = self._build_overall_confidence_score(
+            candidate_emails=candidate_emails,
+            profile_pivots=profile_pivots,
+            evidences=evidences,
+        )
 
         return InvestigationResult(
             query=query,
@@ -105,6 +144,7 @@ class InvestigationService:
             risks=risks,
             pivot_suggestions=pivot_suggestions,
             limitations=limitations,
+            overall_confidence_score=overall_confidence_score,
         )
 
     def _ensure_useful_query(self, query: InvestigationInput) -> None:
@@ -150,6 +190,7 @@ class InvestigationService:
                         collected_at=collected_at,
                         method="manual_input",
                         confidence="high",
+                        confidence_score=80,
                         summary=f"The investigation started with {label}: {value}",
                     )
                 )
@@ -192,6 +233,26 @@ class InvestigationService:
                     deduped[candidate.email] = candidate
 
         return list(deduped.values())
+
+    def _check_profile_pivots(
+        self,
+        profile_pivots: list[ProfilePivot],
+        lab_profile_scenario: str | None,
+    ) -> tuple[list[ProfilePivot], list[EvidenceRecord]]:
+        """Resolve public profile URLs conservatively or through a lab simulation."""
+        checked: list[ProfilePivot] = []
+        evidences: list[EvidenceRecord] = []
+        for pivot in profile_pivots:
+            if lab_profile_scenario:
+                updated, evidence = self.profile_check_service.simulate_profile_check(
+                    pivot,
+                    lab_profile_scenario,
+                )
+            else:
+                updated, evidence = self.profile_check_service.check_public_profile(pivot)
+            checked.append(updated)
+            evidences.append(evidence)
+        return checked, evidences
 
     def _build_profile_pivots(
         self,
@@ -249,16 +310,19 @@ class InvestigationService:
                 domain="unknown",
                 source=source,
                 confidence=confidence,
+                confidence_score=10,
                 status="invalid",
                 notes=[normalized_or_error],
             )
 
+        score = self._score_email_candidate(source=source)
         return EmailCandidate(
             email=normalized_or_error,
             masked_email=mask_email_address(normalized_or_error),
             domain=domain,
             source=source,
             confidence=confidence,
+            confidence_score=score,
             status="valid",
         )
 
@@ -277,6 +341,7 @@ class InvestigationService:
                 collected_at=collected_at,
                 method="email_validation",
                 confidence=candidate.confidence,
+                confidence_score=candidate.confidence_score,
                 summary=f"{candidate.email} was retained as a {candidate.source} candidate.",
             ),
             EvidenceRecord(
@@ -287,6 +352,7 @@ class InvestigationService:
                 collected_at=collected_at,
                 method="hibp_breach_query",
                 confidence="medium",
+                confidence_score=self._score_hibp_evidence(analysis.hibp.status),
                 summary=f"{candidate.email} returned HIBP status {analysis.hibp.status}.",
                 observations=analysis.hibp.error,
             ),
@@ -316,6 +382,7 @@ class InvestigationService:
             collected_at=datetime.now(timezone.utc).isoformat(),
             method="dns_lookup",
             confidence=confidence,
+            confidence_score=80 if dns_result.resolves else 45,
             summary=summary,
             observations=notes,
         )
@@ -354,6 +421,36 @@ class InvestigationService:
             )
 
         return pivots
+
+    def _build_profile_findings(self, profile_pivots: list[ProfilePivot]) -> list[str]:
+        """Summarize public-profile resolution checks into investigation findings."""
+        findings: list[str] = []
+        matched = [pivot for pivot in profile_pivots if pivot.resolution_status == "public_match_possible"]
+        if matched:
+            findings.append(
+                f"{len(matched)} public profile URL(s) returned a resolvable public match signal."
+            )
+        not_found = [pivot for pivot in profile_pivots if pivot.resolution_status == "not_found"]
+        if not_found:
+            findings.append(
+                f"{len(not_found)} public profile URL(s) returned not found during collection."
+            )
+        return findings
+
+    def _build_profile_risks(self, profile_pivots: list[ProfilePivot]) -> list[str]:
+        """Summarize public-profile resolution checks into investigation risks."""
+        risks: list[str] = []
+        blocked = [pivot for pivot in profile_pivots if pivot.resolution_status == "blocked_by_platform"]
+        if blocked:
+            risks.append(
+                f"{len(blocked)} platform check(s) were blocked, so account existence remains ambiguous."
+            )
+        ambiguous = [pivot for pivot in profile_pivots if pivot.resolution_status == "ambiguous"]
+        if ambiguous:
+            risks.append(
+                f"{len(ambiguous)} public profile check(s) were ambiguous and require manual verification."
+            )
+        return risks
 
     def _platform_pivots_for_handle(self, handle: str) -> list[ProfilePivot]:
         """Create public-profile pivot suggestions for a single handle."""
@@ -408,6 +505,7 @@ class InvestigationService:
                 search_url=search_url,
                 source="public_profile_pivot",
                 confidence="low",
+                confidence_score=self._score_profile_pivot(handle),
                 status="manual_review",
                 notes=[
                     "Public URL generated for safe manual review.",
@@ -426,6 +524,64 @@ class InvestigationService:
             "Absence of breach data or DNS signals does not prove an email or identity is safe, inactive, or nonexistent.",
         ]
 
+    def _score_email_candidate(self, source: str) -> int:
+        """Return a simple confidence score for an email candidate source."""
+        mapping = {
+            "seed_email": 90,
+            "provided_candidate": 75,
+            "username_domain_inference": 60,
+            "name_domain_inference": 45,
+        }
+        return mapping.get(source, 40)
+
+    def _score_hibp_evidence(self, status: str) -> int:
+        """Return a confidence score for HIBP-derived evidence."""
+        mapping = {
+            "breaches_found": 85,
+            "no_breaches": 60,
+            "missing_api_key": 25,
+            "disabled": 20,
+            "timeout": 25,
+            "request_error": 20,
+            "unauthorized": 15,
+            "forbidden": 15,
+            "rate_limited": 20,
+            "http_error": 20,
+        }
+        return mapping.get(status, 25)
+
+    def _score_profile_pivot(self, handle: str) -> int:
+        """Return a basic score for public profile pivots."""
+        if "." in handle or "_" in handle:
+            return 50
+        if len(handle) >= 6:
+            return 55
+        return 40
+
+    def _build_overall_confidence_score(
+        self,
+        candidate_emails: list[EmailCandidate],
+        profile_pivots: list[ProfilePivot],
+        evidences: list[EvidenceRecord],
+    ) -> int:
+        """Build an overall score that summarizes how actionable the investigation looks."""
+        scores: list[int] = []
+        scores.extend(candidate.confidence_score for candidate in candidate_emails if candidate.status == "valid")
+        scores.extend(pivot.confidence_score for pivot in profile_pivots[:5])
+        scores.extend(evidence.confidence_score for evidence in evidences[:5])
+        if not scores:
+            return 0
+        return round(sum(scores) / len(scores))
+
     def _dedupe_preserve_order(self, items: list[str]) -> list[str]:
         """Remove duplicates while preserving the original order."""
         return list(OrderedDict.fromkeys(item for item in items if item))
+
+    def _notify(
+        self,
+        progress_callback: Callable[[str], None] | None,
+        message: str,
+    ) -> None:
+        """Emit a progress update when the caller asked for visual feedback."""
+        if progress_callback is not None:
+            progress_callback(message)

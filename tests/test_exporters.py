@@ -49,6 +49,7 @@ def build_investigation_result() -> InvestigationResult:
                 domain="example.com",
                 source="seed_email",
                 confidence="high",
+                confidence_score=90,
                 status="valid",
             )
         ],
@@ -60,6 +61,7 @@ def build_investigation_result() -> InvestigationResult:
                 search_url="https://www.google.com/search?q=site%3Alinkedin.com%2Fin+%22user%22",
                 source="public_profile_pivot",
                 confidence="low",
+                confidence_score=50,
                 status="manual_review",
                 notes=["Public URL generated for safe manual review."],
             )
@@ -73,6 +75,7 @@ def build_investigation_result() -> InvestigationResult:
                 collected_at="2026-05-21T12:00:00+00:00",
                 method="manual_input",
                 confidence="high",
+                confidence_score=80,
                 summary="The investigation started with email: u**r@example.com",
             )
         ],
@@ -80,6 +83,9 @@ def build_investigation_result() -> InvestigationResult:
         risks=["Public breach exposure may increase phishing risk."],
         pivot_suggestions=["Review naming patterns."],
         limitations=["Results are OSINT indicators."],
+        overall_confidence_score=73,
+        refinement_file_path=".mailrecon-temp/last-investigation-refinement.json",
+        refinement_excluded_links=["https://www.linkedin.com/in/other-user/"],
     )
 
 
@@ -111,9 +117,12 @@ def test_export_investigation_markdown_writes_file(tmp_path) -> None:
 
     content = output.read_text(encoding="utf-8")
     assert "# MailRecon Investigation Report" in content
+    assert "- Overall confidence: 73/100" in content
+    assert "- refinement_excluded_links: 1" in content
     assert "## Candidate emails" in content
     assert "u**r@example.com" in content
     assert "## Public-profile pivots" in content
+    assert "## Refinement" in content
 
 
 def test_export_investigation_markdown_can_reveal_emails(tmp_path) -> None:
@@ -140,4 +149,5 @@ def test_export_investigation_markdown_supports_pt_br(tmp_path) -> None:
 
     content = output.read_text(encoding="utf-8")
     assert "# Relatório de Investigação MailRecon" in content
+    assert "- Confiança geral: 73/100" in content
     assert "## Pivôs de perfis públicos" in content

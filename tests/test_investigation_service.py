@@ -3,7 +3,7 @@ from mailrecon.services.investigation_service import InvestigationService
 
 
 class FakeReconService:
-    def analyze_email(self, email: str) -> ReconResult:
+    def analyze_email(self, email: str, progress_callback=None) -> ReconResult:
         domain = email.rsplit("@", maxsplit=1)[1]
         hibp_status = "breaches_found" if email.startswith("alice") else "no_breaches"
         breaches = [{"Name": "ExampleBreach", "Title": "Example Breach"}] if hibp_status == "breaches_found" else []
@@ -53,7 +53,10 @@ def test_investigation_service_builds_candidates_from_multiple_seeds() -> None:
     assert "alice@example.com" in emails
     assert "asmith@example.com" in emails
     assert "alice.smith@example.com" in emails
+    assert result.overall_confidence_score > 0
+    assert all(candidate.confidence_score >= 0 for candidate in result.candidate_emails)
     assert result.profile_pivots
+    assert all(pivot.confidence_score >= 0 for pivot in result.profile_pivots)
     assert any(pivot.platform == "LinkedIn" for pivot in result.profile_pivots)
     assert result.findings
     assert result.evidences
@@ -86,3 +89,24 @@ def test_investigation_service_masks_invalid_candidate_email() -> None:
 
     assert result.candidate_emails[0].status == "invalid"
     assert result.candidate_emails[0].notes
+
+
+def test_investigation_service_can_simulate_public_profile_checks() -> None:
+    service = InvestigationService(
+        recon_service=FakeReconService(),
+        dns_service=FakeDnsService(),
+    )
+    query = InvestigationInput(
+        usernames=["asmith"],
+        domains=["example.com"],
+    )
+
+    result = service.investigate(
+        query,
+        check_public_profiles=True,
+        lab_profile_scenario="found",
+    )
+
+    assert result.profile_pivots
+    assert all(pivot.resolution_status == "public_match_possible" for pivot in result.profile_pivots)
+    assert any(evidence.category == "public_profile" for evidence in result.evidences)

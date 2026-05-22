@@ -77,11 +77,13 @@ def export_investigation_markdown(
         copy["title"],
         "",
         f"- {copy['generated_at']}: {result.generated_at}",
+        f"- {copy['overall_confidence']}: {result.overall_confidence_score}/100",
         f"- {copy['seed_emails']}: {len(result.query.emails)}",
         f"- {copy['seed_usernames']}: {len(result.query.usernames)}",
         f"- {copy['seed_domains']}: {len(result.query.domains)}",
         f"- {copy['candidate_emails']}: {len(result.candidate_emails)}",
         f"- {copy['profile_pivots']}: {len(result.profile_pivots)}",
+        f"- {copy['refinement_excluded_links']}: {len(result.refinement_excluded_links)}",
     ]
 
     if result.query.names:
@@ -101,7 +103,7 @@ def export_investigation_markdown(
         for candidate in result.candidate_emails:
             display_email = candidate.masked_email if mask_sensitive else candidate.email
             lines.append(
-                f"- {display_email} | {copy['status']}={candidate.status} | {copy['source']}={candidate.source} | {copy['confidence']}={candidate.confidence}"
+                f"- {display_email} | {copy['status']}={candidate.status} | {copy['source']}={candidate.source} | {copy['confidence']}={candidate.confidence} | {copy['score']}={candidate.confidence_score}/100"
             )
             for note in candidate.notes:
                 lines.append(f"  - {copy['note']}: {note}")
@@ -110,10 +112,14 @@ def export_investigation_markdown(
         lines.extend(["", copy["profile_pivots_heading"], ""])
         for pivot in result.profile_pivots:
             lines.append(
-                f"- {pivot.platform} | handle={pivot.handle} | {copy['status']}={pivot.status} | {copy['confidence']}={pivot.confidence}"
+                f"- {pivot.platform} | handle={pivot.handle} | {copy['status']}={pivot.status} | {copy['resolution_status']}={pivot.resolution_status} | {copy['confidence']}={pivot.confidence} | {copy['score']}={pivot.confidence_score}/100"
             )
             lines.append(f"  - {copy['profile_url']}: {pivot.profile_url}")
             lines.append(f"  - {copy['search_url']}: {pivot.search_url}")
+            if pivot.final_url:
+                lines.append(f"  - {copy['final_url']}: {pivot.final_url}")
+            if pivot.http_status_code is not None:
+                lines.append(f"  - {copy['http_status']}: {pivot.http_status_code}")
             for note in pivot.notes:
                 lines.append(f"  - {copy['note']}: {note}")
 
@@ -128,7 +134,7 @@ def export_investigation_markdown(
         lines.extend(["", copy["evidence_heading"], ""])
         for evidence in result.evidences:
             lines.append(
-                f"- {evidence.title} | {copy['source']}={evidence.source} | {copy['method']}={evidence.method} | {copy['confidence']}={evidence.confidence}"
+                f"- {evidence.title} | {copy['source']}={evidence.source} | {copy['method']}={evidence.method} | {copy['confidence']}={evidence.confidence} | {copy['score']}={evidence.confidence_score}/100"
             )
             summary = _mask_text(evidence.summary) if mask_sensitive else evidence.summary
             lines.append(f"  - {copy['summary']}: {summary}")
@@ -151,6 +157,16 @@ def export_investigation_markdown(
     if result.limitations:
         lines.extend(["", copy["limitations_heading"], ""])
         lines.extend(f"- {limitation}" for limitation in result.limitations)
+
+    if result.refinement_file_path:
+        lines.extend(["", copy["refinement_heading"], ""])
+        lines.append(f"- {copy['refinement_file_path']}: {result.refinement_file_path}")
+        if result.refinement_excluded_links:
+            lines.append(
+                f"- {copy['refinement_excluded_links']}: {len(result.refinement_excluded_links)}"
+            )
+            for link in result.refinement_excluded_links:
+                lines.append(f"  - {link}")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -189,11 +205,15 @@ def _markdown_copy(language: str) -> dict[str, str]:
         return {
             "title": "# Relatório de Investigação MailRecon",
             "generated_at": "Gerado em",
+            "overall_confidence": "Confiança geral",
             "seed_emails": "E-mails de origem",
             "seed_usernames": "Usernames de origem",
             "seed_domains": "Domínios de origem",
             "candidate_emails": "E-mails candidatos",
             "profile_pivots": "Pivôs de perfis públicos",
+            "refinement_heading": "## Refinamento",
+            "refinement_file_path": "arquivo_refinamento",
+            "refinement_excluded_links": "links_excluidos_refinamento",
             "names_heading": "## Nomes",
             "organizations_heading": "## Organizações",
             "context_heading": "## Contexto",
@@ -205,11 +225,15 @@ def _markdown_copy(language: str) -> dict[str, str]:
             "pivot_suggestions_heading": "## Sugestões de pivô",
             "limitations_heading": "## Limitações",
             "status": "status",
+            "resolution_status": "status_resolucao",
             "source": "fonte",
             "confidence": "confianca",
+            "score": "score",
             "note": "nota",
             "profile_url": "url_perfil",
             "search_url": "url_busca",
+            "final_url": "url_final",
+            "http_status": "http_status",
             "method": "metodo",
             "summary": "resumo",
             "reference": "referencia",
@@ -220,11 +244,15 @@ def _markdown_copy(language: str) -> dict[str, str]:
     return {
         "title": "# MailRecon Investigation Report",
         "generated_at": "Generated at",
+        "overall_confidence": "Overall confidence",
         "seed_emails": "Seed emails",
         "seed_usernames": "Seed usernames",
         "seed_domains": "Seed domains",
         "candidate_emails": "Candidate emails",
         "profile_pivots": "Public-profile pivots",
+        "refinement_heading": "## Refinement",
+        "refinement_file_path": "refinement_file_path",
+        "refinement_excluded_links": "refinement_excluded_links",
         "names_heading": "## Names",
         "organizations_heading": "## Organizations",
         "context_heading": "## Context",
@@ -236,11 +264,15 @@ def _markdown_copy(language: str) -> dict[str, str]:
         "pivot_suggestions_heading": "## Pivot suggestions",
         "limitations_heading": "## Limitations",
         "status": "status",
+        "resolution_status": "resolution_status",
         "source": "source",
         "confidence": "confidence",
+        "score": "score",
         "note": "note",
         "profile_url": "profile_url",
         "search_url": "search_url",
+        "final_url": "final_url",
+        "http_status": "http_status",
         "method": "method",
         "summary": "summary",
         "reference": "reference",

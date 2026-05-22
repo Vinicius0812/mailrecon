@@ -66,6 +66,7 @@ class EvidenceRecord:
     collected_at: str
     method: str
     confidence: str
+    confidence_score: int
     summary: str
     observations: str | None = None
 
@@ -79,6 +80,7 @@ class EmailCandidate:
     domain: str
     source: str
     confidence: str
+    confidence_score: int
     status: str
     notes: list[str] = field(default_factory=list)
     analysis: ReconResult | None = None
@@ -94,7 +96,12 @@ class ProfilePivot:
     search_url: str
     source: str
     confidence: str
+    confidence_score: int
     status: str
+    resolution_status: str = "not_checked"
+    http_status_code: int | None = None
+    final_url: str | None = None
+    checked_at: str | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -110,6 +117,9 @@ class InvestigationResult:
     risks: list[str]
     pivot_suggestions: list[str]
     limitations: list[str]
+    overall_confidence_score: int
+    refinement_file_path: str | None = None
+    refinement_excluded_links: list[str] = field(default_factory=list)
     generated_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
