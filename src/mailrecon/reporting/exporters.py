@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mailrecon.core.models import InvestigationResult, ReconResult
+from mailrecon.core.models import InvestigationResult, ReconResult, SmtpLabValidationResult
 from mailrecon.core.validators import mask_email_address
 
 
-def export_json(result: ReconResult | InvestigationResult, output_path: str | Path) -> Path:
+def export_json(
+    result: ReconResult | InvestigationResult | SmtpLabValidationResult,
+    output_path: str | Path,
+) -> Path:
     """Export a result as JSON."""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -17,18 +20,32 @@ def export_json(result: ReconResult | InvestigationResult, output_path: str | Pa
     return path
 
 
-def export_markdown(result: ReconResult, output_path: str | Path) -> Path:
+def export_markdown(
+    result: ReconResult,
+    output_path: str | Path,
+    mask_sensitive: bool = True,
+) -> Path:
     """Export a recon result as Markdown."""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    display_email = mask_email_address(result.email) if mask_sensitive else result.email
 
     lines = [
         "# MailRecon Report",
         "",
-        f"- Email: {result.email}",
+        f"- Email: {display_email}",
         f"- Domain: {result.domain}",
         f"- Format valid: {'yes' if result.is_valid else 'no'}",
         f"- Domain resolves: {'yes' if result.dns.resolves else 'no'}",
+        f"- Domain status: {result.dns.domain_status}",
+        f"- Mail capability: {result.dns.email_acceptance_status}",
+        f"- Provider family: {result.dns.provider_family}",
+        f"- SPF status: {result.dns.spf_status}",
+        f"- DMARC status: {result.dns.dmarc_status}",
+        f"- Technical review priority: {result.technical_assessment.review_priority_score}/100",
+        f"- Role account status: {result.technical_assessment.role_account_status}",
+        f"- Disposable status: {result.technical_assessment.disposable_status}",
+        f"- Catch-all status: {result.technical_assessment.catch_all_status}",
         f"- MX records found: {'yes' if result.dns.mx_records else 'no'}",
         f"- HIBP status: {result.hibp.status}",
         f"- HIBP queried: {'yes' if result.hibp.queried else 'no'}",
@@ -47,6 +64,14 @@ def export_markdown(result: ReconResult, output_path: str | Path) -> Path:
         lines.extend(["", "## DNS notes", ""])
         lines.extend(f"- {error}" for error in result.dns.errors)
 
+    if result.technical_assessment.decision_reasons:
+        lines.extend(["", "## Technical assessment reasons", ""])
+        lines.extend(f"- {reason}" for reason in result.technical_assessment.decision_reasons)
+
+    if result.technical_assessment.limitations:
+        lines.extend(["", "## Technical assessment limitations", ""])
+        lines.extend(f"- {limitation}" for limitation in result.technical_assessment.limitations)
+
     if result.hibp.breaches:
         lines.extend(["", "## HIBP breaches", ""])
         lines.extend(
@@ -56,6 +81,51 @@ def export_markdown(result: ReconResult, output_path: str | Path) -> Path:
 
     if result.hibp.error:
         lines.extend(["", "## HIBP notes", "", f"- {result.hibp.error}"])
+
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def export_smtp_lab_markdown(
+    result: SmtpLabValidationResult,
+    output_path: str | Path,
+) -> Path:
+    """Export a lab-only SMTP validation result as Markdown."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        "# MailRecon Lab SMTP Validation",
+        "",
+        "- Mode: LAB ONLY - not evidence of real mailbox existence",
+        f"- Email: {result.email}",
+        f"- Lab domain: {result.lab_domain}",
+        f"- Transport: {result.transport}",
+        f"- Host: {result.host}:{result.port}",
+        f"- Network used: {'yes' if result.network_used else 'no'}",
+        f"- Safety status: {result.safety_decision.status}",
+        f"- Generated at: {result.generated_at}",
+    ]
+
+    if result.resolved_ips:
+        lines.extend(["", "## Resolved IPs", ""])
+        lines.extend(f"- {ip}" for ip in result.resolved_ips)
+
+    if result.safety_decision.reasons:
+        lines.extend(["", "## Safety Decision", ""])
+        lines.extend(f"- {reason}" for reason in result.safety_decision.reasons)
+
+    if result.checks_run:
+        lines.extend(["", "## Checks", ""])
+        for check in result.checks_run:
+            code = f" | smtp_code={check.smtp_code}" if check.smtp_code is not None else ""
+            lines.append(f"- {check.check} | status={check.status}{code}")
+            if check.message:
+                lines.append(f"  - message: {check.message}")
+
+    if result.limitations:
+        lines.extend(["", "## Limitations", ""])
+        lines.extend(f"- {limitation}" for limitation in result.limitations)
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -77,7 +147,7 @@ def export_investigation_markdown(
         copy["title"],
         "",
         f"- {copy['generated_at']}: {result.generated_at}",
-        f"- {copy['overall_confidence']}: {result.overall_confidence_score}/100",
+        f"- {copy['review_priority']}: {result.review_priority_score or result.overall_confidence_score}/100",
         f"- {copy['seed_emails']}: {len(result.query.emails)}",
         f"- {copy['seed_usernames']}: {len(result.query.usernames)}",
         f"- {copy['seed_domains']}: {len(result.query.domains)}",
@@ -85,6 +155,13 @@ def export_investigation_markdown(
         f"- {copy['profile_pivots']}: {len(result.profile_pivots)}",
         f"- {copy['refinement_excluded_links']}: {len(result.refinement_excluded_links)}",
     ]
+
+    if result.confidence_breakdown:
+        lines.extend(["", copy["confidence_breakdown_heading"], ""])
+        lines.extend(
+            f"- {label}: {score}/100"
+            for label, score in result.confidence_breakdown.items()
+        )
 
     if result.query.names:
         lines.extend(["", copy["names_heading"], ""])
@@ -103,8 +180,16 @@ def export_investigation_markdown(
         for candidate in result.candidate_emails:
             display_email = candidate.masked_email if mask_sensitive else candidate.email
             lines.append(
-                f"- {display_email} | {copy['status']}={candidate.status} | {copy['source']}={candidate.source} | {copy['confidence']}={candidate.confidence} | {copy['score']}={candidate.confidence_score}/100"
+                f"- {display_email} | {copy['status']}={candidate.status} | {copy['source']}={candidate.source} | {copy['confidence']}={candidate.confidence} | {copy['evidence_strength']}={candidate.evidence_strength} | {copy['review_priority']}={candidate.review_priority_score or candidate.confidence_score}/100"
             )
+            lines.append(f"  - {copy['risk_level']}: {candidate.risk_level}")
+            lines.append(f"  - role_account_status: {candidate.role_account_status}")
+            lines.append(f"  - disposable_status: {candidate.disposable_status}")
+            lines.append(f"  - provider_family: {candidate.provider_family}")
+            for reason in candidate.decision_reasons:
+                lines.append(f"  - {copy['decision_reason']}: {reason}")
+            for limitation in candidate.limitations:
+                lines.append(f"  - {copy['limitation']}: {limitation}")
             for note in candidate.notes:
                 lines.append(f"  - {copy['note']}: {note}")
 
@@ -112,7 +197,7 @@ def export_investigation_markdown(
         lines.extend(["", copy["profile_pivots_heading"], ""])
         for pivot in result.profile_pivots:
             lines.append(
-                f"- {pivot.platform} | handle={pivot.handle} | {copy['status']}={pivot.status} | {copy['resolution_status']}={pivot.resolution_status} | {copy['confidence']}={pivot.confidence} | {copy['score']}={pivot.confidence_score}/100"
+                f"- {pivot.platform} | handle={pivot.handle} | {copy['status']}={pivot.status} | {copy['resolution_status']}={pivot.resolution_status} | {copy['confidence']}={pivot.confidence} | {copy['evidence_strength']}={pivot.evidence_strength} | {copy['review_priority']}={pivot.review_priority_score or pivot.confidence_score}/100"
             )
             lines.append(f"  - {copy['profile_url']}: {pivot.profile_url}")
             lines.append(f"  - {copy['search_url']}: {pivot.search_url}")
@@ -120,6 +205,18 @@ def export_investigation_markdown(
                 lines.append(f"  - {copy['final_url']}: {pivot.final_url}")
             if pivot.http_status_code is not None:
                 lines.append(f"  - {copy['http_status']}: {pivot.http_status_code}")
+            for reason in pivot.ambiguity_reasons:
+                lines.append(f"  - ambiguity_reason: {reason}")
+            for field in pivot.matched_fields:
+                lines.append(f"  - matched_field: {field}")
+            for field in pivot.missing_fields:
+                lines.append(f"  - missing_field: {field}")
+            for field in pivot.conflicting_fields:
+                lines.append(f"  - conflicting_field: {field}")
+            for reason in pivot.decision_reasons:
+                lines.append(f"  - {copy['decision_reason']}: {reason}")
+            for limitation in pivot.limitations:
+                lines.append(f"  - {copy['limitation']}: {limitation}")
             for note in pivot.notes:
                 lines.append(f"  - {copy['note']}: {note}")
 
@@ -134,7 +231,7 @@ def export_investigation_markdown(
         lines.extend(["", copy["evidence_heading"], ""])
         for evidence in result.evidences:
             lines.append(
-                f"- {evidence.title} | {copy['source']}={evidence.source} | {copy['method']}={evidence.method} | {copy['confidence']}={evidence.confidence} | {copy['score']}={evidence.confidence_score}/100"
+                f"- {evidence.title} | {copy['source']}={evidence.source} | {copy['method']}={evidence.method} | {copy['confidence']}={evidence.confidence} | {copy['evidence_strength']}={evidence.evidence_strength} | {copy['score']}={evidence.confidence_score}/100"
             )
             summary = _mask_text(evidence.summary) if mask_sensitive else evidence.summary
             lines.append(f"  - {copy['summary']}: {summary}")
@@ -142,6 +239,12 @@ def export_investigation_markdown(
             lines.append(f"  - {copy['collected_at']}: {evidence.collected_at}")
             if evidence.observations:
                 lines.append(f"  - {copy['observations']}: {evidence.observations}")
+            if evidence.risk_level != "none":
+                lines.append(f"  - {copy['risk_level']}: {evidence.risk_level}")
+            for reason in evidence.decision_reasons:
+                lines.append(f"  - {copy['decision_reason']}: {reason}")
+            for limitation in evidence.limitations:
+                lines.append(f"  - {copy['limitation']}: {limitation}")
 
     if result.risks:
         lines.extend(["", copy["risks_heading"], ""])
@@ -205,7 +308,8 @@ def _markdown_copy(language: str) -> dict[str, str]:
         return {
             "title": "# Relatório de Investigação MailRecon",
             "generated_at": "Gerado em",
-            "overall_confidence": "Confiança geral",
+            "review_priority": "Prioridade de revisão",
+            "confidence_breakdown_heading": "## Quebra de confiança",
             "seed_emails": "E-mails de origem",
             "seed_usernames": "Usernames de origem",
             "seed_domains": "Domínios de origem",
@@ -228,7 +332,11 @@ def _markdown_copy(language: str) -> dict[str, str]:
             "resolution_status": "status_resolucao",
             "source": "fonte",
             "confidence": "confianca",
+            "evidence_strength": "forca_evidencia",
+            "risk_level": "nivel_risco",
             "score": "score",
+            "decision_reason": "razao_decisao",
+            "limitation": "limitacao",
             "note": "nota",
             "profile_url": "url_perfil",
             "search_url": "url_busca",
@@ -244,7 +352,8 @@ def _markdown_copy(language: str) -> dict[str, str]:
     return {
         "title": "# MailRecon Investigation Report",
         "generated_at": "Generated at",
-        "overall_confidence": "Overall confidence",
+        "review_priority": "Review priority",
+        "confidence_breakdown_heading": "## Confidence breakdown",
         "seed_emails": "Seed emails",
         "seed_usernames": "Seed usernames",
         "seed_domains": "Seed domains",
@@ -267,7 +376,11 @@ def _markdown_copy(language: str) -> dict[str, str]:
         "resolution_status": "resolution_status",
         "source": "source",
         "confidence": "confidence",
+        "evidence_strength": "evidence_strength",
+        "risk_level": "risk_level",
         "score": "score",
+        "decision_reason": "decision_reason",
+        "limitation": "limitation",
         "note": "note",
         "profile_url": "profile_url",
         "search_url": "search_url",

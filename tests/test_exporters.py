@@ -106,8 +106,17 @@ def test_export_markdown_writes_file(tmp_path) -> None:
 
     content = output.read_text(encoding="utf-8")
     assert "# MailRecon Report" in content
-    assert "- Email: user@example.com" in content
+    assert "- Email: u**r@example.com" in content
     assert "- HIBP queried: no" in content
+
+
+def test_export_markdown_can_reveal_email(tmp_path) -> None:
+    output = tmp_path / "report-revealed.md"
+
+    export_markdown(build_result(), output, mask_sensitive=False)
+
+    content = output.read_text(encoding="utf-8")
+    assert "- Email: user@example.com" in content
 
 
 def test_export_investigation_markdown_writes_file(tmp_path) -> None:
@@ -117,7 +126,7 @@ def test_export_investigation_markdown_writes_file(tmp_path) -> None:
 
     content = output.read_text(encoding="utf-8")
     assert "# MailRecon Investigation Report" in content
-    assert "- Overall confidence: 73/100" in content
+    assert "- Review priority: 73/100" in content
     assert "- refinement_excluded_links: 1" in content
     assert "## Candidate emails" in content
     assert "u**r@example.com" in content
@@ -149,5 +158,5 @@ def test_export_investigation_markdown_supports_pt_br(tmp_path) -> None:
 
     content = output.read_text(encoding="utf-8")
     assert "# Relatório de Investigação MailRecon" in content
-    assert "- Confiança geral: 73/100" in content
+    assert "- Prioridade de revisão: 73/100" in content
     assert "## Pivôs de perfis públicos" in content

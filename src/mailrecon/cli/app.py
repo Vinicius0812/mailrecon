@@ -6,11 +6,16 @@ import typer
 
 from mailrecon.core.config import load_settings
 from mailrecon.core.models import InvestigationInput
-from mailrecon.reporting.console import render_investigation_summary, render_summary
+from mailrecon.reporting.console import (
+    render_investigation_summary,
+    render_smtp_lab_summary,
+    render_summary,
+)
 from mailrecon.reporting.exporters import (
     export_investigation_markdown,
     export_json,
     export_markdown,
+    export_smtp_lab_markdown,
 )
 from mailrecon.services.dns_service import DnsService
 from mailrecon.services.hibp_service import HibpService
@@ -18,6 +23,7 @@ from mailrecon.services.investigation_service import InvestigationService
 from mailrecon.services.profile_check_service import ProfileCheckService
 from mailrecon.services.refinement_state_service import RefinementStateService
 from mailrecon.services.recon_service import ReconService
+from mailrecon.services.smtp_lab_service import SmtpLabValidationService
 
 app = typer.Typer(
     help="Educational CLI for email recon and validation.",
@@ -67,6 +73,16 @@ def _build_investigation_service(use_hibp: bool) -> InvestigationService:
 def _build_refinement_state_service() -> RefinementStateService:
     """Compose the helper that stores temporary refinement data."""
     return RefinementStateService()
+
+
+def _build_smtp_lab_validation_service() -> SmtpLabValidationService:
+    """Compose the lab-only SMTP validation service."""
+    settings = load_settings()
+    return SmtpLabValidationService(
+        enable_lab_smtp=settings.enable_lab_smtp,
+        allow_hosts=settings.lab_smtp_allow_hosts,
+        timeout=settings.lab_smtp_timeout,
+    )
 
 
 def _run_investigation(
@@ -144,6 +160,11 @@ def analyze(
         "--md-out",
         help="Write the full result as Markdown.",
     ),
+    reveal_emails: bool = typer.Option(
+        False,
+        "--reveal-emails",
+        help="Show full email addresses in terminal summaries and Markdown reports.",
+    ),
     use_hibp: bool = typer.Option(
         True,
         "--hibp/--no-hibp",
@@ -162,14 +183,18 @@ def analyze(
         typer.secho(f"Analysis failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(render_summary(result))
+    typer.echo(render_summary(result, mask_sensitive=not reveal_emails))
 
     if json_out is not None:
         export_path = export_json(result, json_out)
         typer.secho(f"JSON report saved to: {export_path}", fg=typer.colors.GREEN)
 
     if md_out is not None:
-        export_path = export_markdown(result, md_out)
+        export_path = export_markdown(
+            result,
+            md_out,
+            mask_sensitive=not reveal_emails,
+        )
         typer.secho(f"Markdown report saved to: {export_path}", fg=typer.colors.GREEN)
 
 
@@ -408,6 +433,106 @@ def lab_admin(
         reveal_emails=reveal_emails,
         markdown_language=markdown_language,
     )
+
+
+@app.command("lab-smtp-validate")
+def lab_smtp_validate(
+    email: str = typer.Argument(..., help="Lab email address to validate."),
+    lab_domain: str = typer.Option(
+        ...,
+        "--lab-domain",
+        help="Explicit lab domain that must match the email domain.",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Explicit lab SMTP host. MX discovery is intentionally not supported.",
+    ),
+    port: int = typer.Option(
+        2525,
+        "--port",
+        min=1,
+        max=65535,
+        help="Explicit lab SMTP port.",
+    ),
+    transport: str = typer.Option(
+        "mock",
+        "--transport",
+        help="Lab transport: mock, localhost, or private-lab.",
+    ),
+    check: list[str] | None = typer.Option(
+        None,
+        "--check",
+        help="Lab SMTP check to run: vrfy, rcpt, or expn. Repeat up to --max-probes.",
+    ),
+    confirm_lab_only: bool = typer.Option(
+        False,
+        "--confirm-lab-only",
+        help="Required for networked lab SMTP checks.",
+    ),
+    no_network: bool = typer.Option(
+        False,
+        "--no-network",
+        help="Force mock-only execution and block networked transports.",
+    ),
+    max_probes: int = typer.Option(
+        3,
+        "--max-probes",
+        min=1,
+        max=3,
+        help="Hard limit for requested lab SMTP probes.",
+    ),
+    json_out: Path | None = typer.Option(
+        None,
+        "--json-out",
+        help="Write the lab SMTP result as JSON.",
+    ),
+    md_out: Path | None = typer.Option(
+        None,
+        "--md-out",
+        help="Write the lab SMTP result as Markdown.",
+    ),
+) -> None:
+    """Run lab-only SMTP validation with strict safety gates.
+
+    This command is intentionally isolated from the normal recon workflow.
+    Networked checks require MAILRECON_ENABLE_LAB_SMTP=1, --confirm-lab-only,
+    an explicit lab host, and a matching --lab-domain.
+    """
+    service = _build_smtp_lab_validation_service()
+    requested_checks = check or ["vrfy"]
+
+    try:
+        result = service.validate(
+            email=email,
+            lab_domain=lab_domain,
+            host=host,
+            port=port,
+            transport=transport.lower(),
+            checks=requested_checks,
+            confirm_lab_only=confirm_lab_only,
+            no_network=no_network,
+            max_probes=max_probes,
+        )
+    except ValueError as exc:
+        typer.secho(f"Invalid lab SMTP input: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:
+        typer.secho(f"Lab SMTP validation failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(render_smtp_lab_summary(result))
+
+    if json_out is not None:
+        export_path = export_json(result, json_out)
+        typer.secho(f"JSON report saved to: {export_path}", fg=typer.colors.GREEN)
+
+    if md_out is not None:
+        export_path = export_smtp_lab_markdown(result, md_out)
+        typer.secho(f"Markdown report saved to: {export_path}", fg=typer.colors.GREEN)
+
+    if not result.safety_decision.allowed:
+        raise typer.Exit(code=2)
 
 
 @app.command("rerun-last")

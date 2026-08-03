@@ -45,3 +45,60 @@ def test_hibp_service_handles_404_with_no_breaches(monkeypatch) -> None:
     assert result.queried is True
     assert result.status == "no_breaches"
     assert result.breaches == []
+
+
+def test_hibp_service_handles_invalid_json_response(monkeypatch) -> None:
+    service = HibpService(api_key="secret", enabled=True)
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def get(self, url, params=None):
+            request = httpx.Request("GET", url)
+            return httpx.Response(status_code=200, content=b"not-json", request=request)
+
+    monkeypatch.setattr("mailrecon.services.hibp_service.httpx.Client", FakeClient)
+
+    result = service.query_breaches("user@example.com")
+
+    assert result.queried is True
+    assert result.status == "invalid_response"
+    assert result.breaches == []
+    assert result.error
+
+
+def test_hibp_service_handles_unexpected_json_shape(monkeypatch) -> None:
+    service = HibpService(api_key="secret", enabled=True)
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def get(self, url, params=None):
+            request = httpx.Request("GET", url)
+            return httpx.Response(
+                status_code=200,
+                json={"Name": "Unexpected"},
+                request=request,
+            )
+
+    monkeypatch.setattr("mailrecon.services.hibp_service.httpx.Client", FakeClient)
+
+    result = service.query_breaches("user@example.com")
+
+    assert result.queried is True
+    assert result.status == "invalid_response"
+    assert result.breaches == []

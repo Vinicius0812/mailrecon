@@ -148,9 +148,26 @@ def test_cli_analyze_renders_summary(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "[...] Checking DNS and MX records for example.com..." in result.stdout
     assert "=== MailRecon Analysis ===" in result.stdout
-    assert "Email              : user@example.com" in result.stdout
+    assert "Email              : u**r@example.com" in result.stdout
+    assert "Email              : user@example.com" not in result.stdout
     assert "Domain             : example.com" in result.stdout
     assert "HIBP status        : missing_api_key" in result.stdout
+
+
+def test_cli_analyze_can_reveal_email(monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(
+        "mailrecon.cli.app._build_recon_service",
+        lambda use_hibp: FakeReconService(),
+    )
+
+    result = runner.invoke(
+        app,
+        ["analyze", "user@example.com", "--no-hibp", "--reveal-emails"],
+    )
+
+    assert result.exit_code == 0
+    assert "Email              : user@example.com" in result.stdout
 
 
 def test_cli_analyze_handles_invalid_input(monkeypatch) -> None:
@@ -197,13 +214,13 @@ def test_cli_investigate_renders_summary(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "[...] Building candidate emails..." in result.stdout
     assert "=== MailRecon Investigation ===" in result.stdout
-    assert "Overall confidence : 73/100" in result.stdout
+    assert "Review priority    : 73/100" in result.stdout
     assert "Candidate emails : 1" in result.stdout
     assert "Profile pivots   : 1" in result.stdout
     assert "u**r@example.com" in result.stdout
-    assert "Most trusted platform links" in result.stdout
+    assert "Profile links to review" in result.stdout
     assert "https://www.linkedin.com/in/user/" in result.stdout
-    assert "status=public_match_possible" in result.stdout
+    assert "status=manual_review" in result.stdout
     assert "Refinement file ready at:" in result.stdout
     assert ".mailrecon-temp/last-investigation-refinement.json" in result.stdout
 
@@ -266,7 +283,7 @@ def test_cli_interactive_collects_inputs(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "MailRecon interactive investigation" in result.stdout
-    assert "Overall confidence : 73/100" in result.stdout
+    assert "Review priority    : 73/100" in result.stdout
 
 
 def test_cli_interactive_can_choose_exports(monkeypatch, tmp_path) -> None:
@@ -332,7 +349,7 @@ def test_cli_lab_admin_runs_simulation(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert "Overall confidence : 73/100" in result.stdout
+    assert "Review priority    : 73/100" in result.stdout
 
 
 def test_cli_rerun_last_reuses_saved_parameters(monkeypatch) -> None:
@@ -350,7 +367,7 @@ def test_cli_rerun_last_reuses_saved_parameters(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "Reloading the latest saved investigation parameters..." in result.stdout
-    assert "Overall confidence : 73/100" in result.stdout
+    assert "Review priority    : 73/100" in result.stdout
 
 
 def test_cli_investigate_handles_invalid_input(monkeypatch) -> None:
@@ -375,3 +392,53 @@ def test_cli_investigate_handles_invalid_input(monkeypatch) -> None:
 
     assert result.exit_code == 1
     assert "Invalid investigation input:" in result.stderr
+
+
+def test_cli_lab_smtp_validate_mock_exports_json(tmp_path) -> None:
+    runner = CliRunner()
+    output = tmp_path / "smtp-lab.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "lab-smtp-validate",
+            "user@lab.local",
+            "--lab-domain",
+            "lab.local",
+            "--transport",
+            "mock",
+            "--check",
+            "vrfy",
+            "--json-out",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "MailRecon Lab SMTP Validation" in result.stdout
+    assert "Network used       : no" in result.stdout
+    assert "mocked_accept" in result.stdout
+    assert output.exists()
+
+
+def test_cli_lab_smtp_validate_blocks_network_without_env_gate() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "lab-smtp-validate",
+            "user@lab.local",
+            "--lab-domain",
+            "lab.local",
+            "--transport",
+            "localhost",
+            "--confirm-lab-only",
+            "--check",
+            "vrfy",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "blocked_by_safety_policy" in result.stdout
+    assert "MAILRECON_ENABLE_LAB_SMTP=1" in result.stdout

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import datetime, timezone
+import re
 from typing import Callable
 
 from mailrecon.core.models import (
@@ -26,6 +27,38 @@ from mailrecon.services.recon_service import ReconService
 
 class InvestigationService:
     """Builds structured OSINT investigations from varied starting points."""
+
+    active_candidate_statuses = {
+        "valid",
+        "accepted_direct_seed",
+        "retained_for_manual_review",
+        "candidate_generated",
+        "format_valid_unverified",
+    }
+
+    role_account_local_parts = {
+        "abuse",
+        "admin",
+        "billing",
+        "contact",
+        "help",
+        "info",
+        "no-reply",
+        "noreply",
+        "postmaster",
+        "sales",
+        "security",
+        "support",
+    }
+
+    disposable_domains = {
+        "10minutemail.com",
+        "guerrillamail.com",
+        "mailinator.com",
+        "tempmail.com",
+        "throwawaymail.com",
+        "yopmail.com",
+    }
 
     def __init__(
         self,
@@ -65,7 +98,7 @@ class InvestigationService:
         for candidate in candidate_emails:
             seen_domains[candidate.domain] = None
 
-            if candidate.status != "valid":
+            if not self._candidate_should_be_analyzed(candidate):
                 continue
 
             self._notify(progress_callback, f"Analyzing candidate email: {candidate.email}")
@@ -74,6 +107,7 @@ class InvestigationService:
                 progress_callback=progress_callback,
             )
             candidate.analysis = analysis
+            self._apply_technical_assessment_to_candidate(candidate)
 
             evidences.extend(self._build_candidate_evidences(candidate))
 
@@ -129,7 +163,12 @@ class InvestigationService:
         pivot_suggestions = self._dedupe_preserve_order(pivot_suggestions)
         limitations = self._dedupe_preserve_order(limitations)
         self._notify(progress_callback, "Finalizing investigation summary...")
-        overall_confidence_score = self._build_overall_confidence_score(
+        review_priority_score = self._build_review_priority_score(
+            candidate_emails=candidate_emails,
+            profile_pivots=profile_pivots,
+            evidences=evidences,
+        )
+        confidence_breakdown = self._build_confidence_breakdown(
             candidate_emails=candidate_emails,
             profile_pivots=profile_pivots,
             evidences=evidences,
@@ -144,20 +183,22 @@ class InvestigationService:
             risks=risks,
             pivot_suggestions=pivot_suggestions,
             limitations=limitations,
-            overall_confidence_score=overall_confidence_score,
+            overall_confidence_score=review_priority_score,
+            review_priority_score=review_priority_score,
+            confidence_breakdown=confidence_breakdown,
         )
 
     def _ensure_useful_query(self, query: InvestigationInput) -> None:
         """Require at least one meaningful investigation seed."""
         if any(
             (
-                query.names,
-                query.emails,
-                query.usernames,
-                query.domains,
-                query.organizations,
-                query.contexts,
-                query.candidate_emails,
+                self._has_meaningful_values(query.names),
+                self._has_meaningful_values(query.emails),
+                self._has_meaningful_values(query.usernames),
+                self._has_meaningful_values(query.domains),
+                self._has_meaningful_values(query.organizations),
+                self._has_meaningful_values(query.contexts),
+                self._has_meaningful_values(query.candidate_emails),
             )
         ):
             return
@@ -181,6 +222,8 @@ class InvestigationService:
         evidences: list[EvidenceRecord] = []
         for label, values in items:
             for value in values:
+                if not value.strip():
+                    continue
                 evidences.append(
                     EvidenceRecord(
                         title=f"Seed {label}",
@@ -195,6 +238,10 @@ class InvestigationService:
                     )
                 )
         return evidences
+
+    def _has_meaningful_values(self, values: list[str]) -> bool:
+        """Return whether at least one input value contains non-whitespace text."""
+        return any(value.strip() for value in values)
 
     def _build_candidate_emails(self, query: InvestigationInput) -> list[EmailCandidate]:
         """Build deduplicated email candidates from direct and inferred seeds."""
@@ -213,7 +260,7 @@ class InvestigationService:
         ]
 
         for username in query.usernames:
-            cleaned_username = username.strip().lower()
+            cleaned_username = self._normalize_handle(username)
             if not cleaned_username:
                 continue
             for domain in normalized_domains:
@@ -262,7 +309,7 @@ class InvestigationService:
         """Generate safe public-profile pivots for manual OSINT review."""
         handles = OrderedDict[str, None]()
         for username in query.usernames:
-            cleaned = username.strip().lower()
+            cleaned = self._normalize_handle(username)
             if cleaned:
                 handles[cleaned] = None
 
@@ -271,7 +318,7 @@ class InvestigationService:
                 handles[pattern] = None
 
         for candidate in candidates:
-            if candidate.status == "valid":
+            if self._candidate_should_be_analyzed(candidate):
                 local_part = candidate.email.partition("@")[0].lower()
                 handles[local_part] = None
 
@@ -309,22 +356,205 @@ class InvestigationService:
                 masked_email=mask_email_address(email.strip()),
                 domain="unknown",
                 source=source,
-                confidence=confidence,
-                confidence_score=10,
-                status="invalid",
+                confidence="low",
+                confidence_score=0,
+                status="rejected_invalid_format",
                 notes=[normalized_or_error],
+                evidence_strength="none",
+                risk_level="none",
+                review_priority_score=0,
+                decision_reasons=["Email format validation failed."],
+                limitations=["Invalid email syntax prevents further technical assessment."],
             )
 
-        score = self._score_email_candidate(source=source)
+        classification = self._classify_email_candidate(
+            email=normalized_or_error,
+            source=source,
+            requested_confidence=confidence,
+        )
         return EmailCandidate(
             email=normalized_or_error,
             masked_email=mask_email_address(normalized_or_error),
             domain=domain,
             source=source,
-            confidence=confidence,
-            confidence_score=score,
-            status="valid",
+            confidence=classification["confidence"],
+            confidence_score=classification["review_priority_score"],
+            status=classification["status"],
+            notes=classification["notes"],
+            evidence_strength=classification["evidence_strength"],
+            risk_level=classification["risk_level"],
+            review_priority_score=classification["review_priority_score"],
+            decision_reasons=classification["decision_reasons"],
+            limitations=classification["limitations"],
+            role_account_status=classification["role_account_status"],
+            disposable_status=classification["disposable_status"],
         )
+
+    def _classify_email_candidate(
+        self,
+        email: str,
+        source: str,
+        requested_confidence: str,
+    ) -> dict[str, object]:
+        """Classify a syntactically valid candidate without claiming mailbox existence."""
+        local_part, _, domain = email.partition("@")
+        base_local = local_part.partition("+")[0].lower()
+        role_account_status = (
+            "role_account" if base_local in self.role_account_local_parts else "not_role_account"
+        )
+        disposable_status = (
+            "disposable" if domain.lower() in self.disposable_domains else "unknown"
+        )
+
+        source_profiles = {
+            "seed_email": {
+                "status": "accepted_direct_seed",
+                "confidence": "medium",
+                "evidence_strength": "strong_direct_seed",
+                "review_priority_score": 70,
+                "reason": "Retained because the email was provided directly as an investigation seed.",
+            },
+            "provided_candidate": {
+                "status": "retained_for_manual_review",
+                "confidence": "medium",
+                "evidence_strength": "moderate_third_party_status",
+                "review_priority_score": 60,
+                "reason": "Retained because it was explicitly provided as a candidate email.",
+            },
+            "username_domain_inference": {
+                "status": "candidate_generated",
+                "confidence": "low",
+                "evidence_strength": "weak_inferred",
+                "review_priority_score": 45,
+                "reason": "Generated from username plus domain; this is an inferred lead.",
+            },
+            "name_domain_inference": {
+                "status": "candidate_generated",
+                "confidence": "low",
+                "evidence_strength": "weak_inferred",
+                "review_priority_score": 30,
+                "reason": "Generated from name pattern plus domain; this is a weak inferred lead.",
+            },
+        }
+        profile = source_profiles.get(
+            source,
+            {
+                "status": "format_valid_unverified",
+                "confidence": requested_confidence,
+                "evidence_strength": "weak_inferred",
+                "review_priority_score": 35,
+                "reason": "Retained as a syntactically valid but unverified email candidate.",
+            },
+        )
+
+        notes: list[str] = []
+        decision_reasons = [
+            str(profile["reason"]),
+            "Email syntax is valid; mailbox existence is not confirmed.",
+        ]
+        limitations = [
+            "A valid email format does not prove the mailbox exists.",
+            "No SMTP probing, login flow, password recovery, VRFY, or RCPT TO checks are performed.",
+        ]
+        risk_level = "none"
+        score = int(profile["review_priority_score"])
+
+        if role_account_status == "role_account":
+            risk_level = "medium"
+            score = min(score, 35)
+            notes.append("Local-part looks like a role or shared mailbox.")
+            decision_reasons.append("Role accounts are weaker evidence for personal identity correlation.")
+            limitations.append("Role/shared mailboxes may belong to teams rather than one person.")
+
+        if disposable_status == "disposable":
+            risk_level = "high"
+            score = min(score, 25)
+            notes.append("Domain is on the local disposable-domain list.")
+            decision_reasons.append("Disposable domains are weak evidence for durable identity correlation.")
+            limitations.append("Disposable domains can create false positives in identity investigations.")
+
+        return {
+            "status": profile["status"],
+            "confidence": profile["confidence"],
+            "evidence_strength": profile["evidence_strength"],
+            "risk_level": risk_level,
+            "review_priority_score": score,
+            "notes": notes,
+            "decision_reasons": decision_reasons,
+            "limitations": limitations,
+            "role_account_status": role_account_status,
+            "disposable_status": disposable_status,
+        }
+
+    def _candidate_should_be_analyzed(self, candidate: EmailCandidate) -> bool:
+        """Return whether a candidate is retained for safe public-source analysis."""
+        return candidate.status in self.active_candidate_statuses
+
+    def _apply_technical_assessment_to_candidate(self, candidate: EmailCandidate) -> None:
+        """Apply DNS/domain signals to a candidate after recon analysis."""
+        if candidate.analysis is None:
+            return
+
+        dns = candidate.analysis.dns
+        candidate.provider_family = dns.provider_family
+
+        if dns.domain_status == "nxdomain":
+            candidate.status = "rejected_domain_unresolved"
+            candidate.confidence = "low"
+            candidate.evidence_strength = "none"
+            candidate.review_priority_score = 0
+            candidate.confidence_score = 0
+            candidate.decision_reasons.append("Domain returned NXDOMAIN during public DNS collection.")
+            candidate.limitations.append("The domain did not resolve publicly at collection time.")
+            return
+
+        if dns.email_acceptance_status == "declares_no_mail":
+            candidate.status = "rejected_domain_no_mail"
+            candidate.confidence = "low"
+            candidate.evidence_strength = "none"
+            candidate.review_priority_score = min(candidate.review_priority_score, 5)
+            candidate.confidence_score = candidate.review_priority_score
+            candidate.decision_reasons.append("Domain publishes Null MX and declares it does not accept email.")
+            candidate.limitations.append("Null MX is a domain-level signal, not a mailbox-level response.")
+            return
+
+        if dns.email_acceptance_status == "mx_present":
+            candidate.evidence_strength = self._stronger_evidence(
+                candidate.evidence_strength,
+                "moderate_format_and_dns",
+            )
+            candidate.decision_reasons.append("Domain publishes MX records, so it appears mail-capable.")
+            candidate.limitations.append("MX records validate domain mail capability, not this mailbox.")
+        elif dns.email_acceptance_status == "implicit_mail_possible":
+            candidate.review_priority_score = min(candidate.review_priority_score, 30)
+            candidate.confidence_score = candidate.review_priority_score
+            candidate.decision_reasons.append("Domain has address records but no MX records.")
+            candidate.limitations.append("Implicit mail delivery without MX is possible but weak evidence.")
+        elif dns.email_acceptance_status in {"inconclusive", "no_mail_signal"}:
+            candidate.review_priority_score = min(candidate.review_priority_score, 25)
+            candidate.confidence_score = candidate.review_priority_score
+            candidate.decision_reasons.append(
+                f"Domain mail acceptance status is {dns.email_acceptance_status}."
+            )
+            candidate.limitations.append("DNS collection did not provide a strong mail-capability signal.")
+
+        if dns.spf_status == "present":
+            candidate.decision_reasons.append("Domain publishes SPF; this is hygiene evidence, not mailbox proof.")
+        if dns.dmarc_status == "present":
+            candidate.decision_reasons.append("Domain publishes DMARC; this is governance evidence, not mailbox proof.")
+
+    def _stronger_evidence(self, current: str, candidate: str) -> str:
+        """Return the stronger evidence label using a small ordered scale."""
+        order = {
+            "none": 0,
+            "weak_inferred": 1,
+            "weak_public_http": 1,
+            "moderate_format_and_dns": 2,
+            "moderate_third_party_status": 2,
+            "strong_direct_seed": 3,
+            "strong_confirmed_public_record": 4,
+        }
+        return candidate if order.get(candidate, 0) > order.get(current, 0) else current
 
     def _build_candidate_evidences(self, candidate: EmailCandidate) -> list[EvidenceRecord]:
         """Create evidence records from one analyzed candidate."""
@@ -343,6 +573,10 @@ class InvestigationService:
                 confidence=candidate.confidence,
                 confidence_score=candidate.confidence_score,
                 summary=f"{candidate.email} was retained as a {candidate.source} candidate.",
+                evidence_strength=candidate.evidence_strength,
+                risk_level=candidate.risk_level,
+                decision_reasons=list(candidate.decision_reasons),
+                limitations=list(candidate.limitations),
             ),
             EvidenceRecord(
                 title="HIBP exposure check",
@@ -355,6 +589,13 @@ class InvestigationService:
                 confidence_score=self._score_hibp_evidence(analysis.hibp.status),
                 summary=f"{candidate.email} returned HIBP status {analysis.hibp.status}.",
                 observations=analysis.hibp.error,
+                evidence_strength=self._hibp_evidence_strength(analysis.hibp.status),
+                risk_level="high" if analysis.hibp.status == "breaches_found" else "none",
+                decision_reasons=self._hibp_decision_reasons(analysis.hibp.status),
+                limitations=[
+                    "HIBP exposure status is a third-party public breach signal, not proof of mailbox control.",
+                    "Absence of known breaches does not prove the address is inactive or safe.",
+                ],
             ),
         ]
 
@@ -385,6 +626,16 @@ class InvestigationService:
             confidence_score=80 if dns_result.resolves else 45,
             summary=summary,
             observations=notes,
+            evidence_strength="moderate_format_and_dns" if dns_result.mx_records else "weak_inferred",
+            risk_level="medium" if dns_result.null_mx or not dns_result.resolves else "none",
+            decision_reasons=[
+                f"Domain status: {dns_result.domain_status}.",
+                f"Email acceptance status: {dns_result.email_acceptance_status}.",
+                f"Provider family: {dns_result.provider_family}.",
+            ],
+            limitations=[
+                "DNS describes domain infrastructure and does not confirm individual mailbox existence."
+            ],
         )
 
     def _build_pivot_suggestions(
@@ -419,6 +670,10 @@ class InvestigationService:
             pivots.append(
                 "Review the generated public-profile pivot URLs for platforms such as LinkedIn, Instagram, Facebook, GitHub, X, Spotify, Telegram, and Gravatar."
             )
+
+        pivots.append(
+            "Treat inferred candidates as review leads until at least two independent public signals correlate."
+        )
 
         return pivots
 
@@ -507,6 +762,14 @@ class InvestigationService:
                 confidence="low",
                 confidence_score=self._score_profile_pivot(handle),
                 status="manual_review",
+                review_priority_score=self._score_profile_pivot(handle),
+                evidence_strength="weak_inferred",
+                decision_reasons=[
+                    "Generated as a public URL pattern for manual review.",
+                ],
+                limitations=[
+                    "A generated public-profile URL does not prove the profile exists or belongs to the email subject.",
+                ],
                 notes=[
                     "Public URL generated for safe manual review.",
                     "Treat matches as possible correlations, not proof of identity ownership.",
@@ -514,6 +777,13 @@ class InvestigationService:
             )
             for platform, profile_url, search_url in platform_specs
         ]
+
+    def _normalize_handle(self, handle: str) -> str:
+        """Normalize user-provided handles before using them in URLs or email guesses."""
+        normalized = handle.strip().lower().removeprefix("@")
+        normalized = re.sub(r"[^a-z0-9._-]+", "", normalized)
+        normalized = re.sub(r"[.]+", ".", normalized)
+        return normalized.strip(".-_")
 
     def _build_limitations(self) -> list[str]:
         """Return standard investigation limitations for ethical OSINT use."""
@@ -524,21 +794,11 @@ class InvestigationService:
             "Absence of breach data or DNS signals does not prove an email or identity is safe, inactive, or nonexistent.",
         ]
 
-    def _score_email_candidate(self, source: str) -> int:
-        """Return a simple confidence score for an email candidate source."""
-        mapping = {
-            "seed_email": 90,
-            "provided_candidate": 75,
-            "username_domain_inference": 60,
-            "name_domain_inference": 45,
-        }
-        return mapping.get(source, 40)
-
     def _score_hibp_evidence(self, status: str) -> int:
         """Return a confidence score for HIBP-derived evidence."""
         mapping = {
-            "breaches_found": 85,
-            "no_breaches": 60,
+            "breaches_found": 75,
+            "no_breaches": 20,
             "missing_api_key": 25,
             "disabled": 20,
             "timeout": 25,
@@ -547,31 +807,125 @@ class InvestigationService:
             "forbidden": 15,
             "rate_limited": 20,
             "http_error": 20,
+            "invalid_response": 20,
         }
         return mapping.get(status, 25)
+
+    def _hibp_evidence_strength(self, status: str) -> str:
+        """Classify HIBP evidence strength conservatively."""
+        if status == "breaches_found":
+            return "moderate_third_party_status"
+        return "none"
+
+    def _hibp_decision_reasons(self, status: str) -> list[str]:
+        """Return explanatory reasons for HIBP evidence."""
+        if status == "breaches_found":
+            return ["Public breach data references this email address."]
+        if status == "no_breaches":
+            return ["No known public HIBP breach record was returned; this is not positive identity evidence."]
+        return [f"HIBP status was {status}; treat the result as a limitation, not confirmation."]
 
     def _score_profile_pivot(self, handle: str) -> int:
         """Return a basic score for public profile pivots."""
         if "." in handle or "_" in handle:
-            return 50
+            return 25
         if len(handle) >= 6:
-            return 55
-        return 40
+            return 25
+        return 20
 
-    def _build_overall_confidence_score(
+    def _build_review_priority_score(
         self,
         candidate_emails: list[EmailCandidate],
         profile_pivots: list[ProfilePivot],
         evidences: list[EvidenceRecord],
     ) -> int:
-        """Build an overall score that summarizes how actionable the investigation looks."""
-        scores: list[int] = []
-        scores.extend(candidate.confidence_score for candidate in candidate_emails if candidate.status == "valid")
-        scores.extend(pivot.confidence_score for pivot in profile_pivots[:5])
-        scores.extend(evidence.confidence_score for evidence in evidences[:5])
+        """Build a score that summarizes how soon the investigation deserves review."""
+        scores: list[tuple[int, float]] = []
+        scores.extend(
+            (candidate.review_priority_score or candidate.confidence_score, 1.4)
+            for candidate in candidate_emails
+            if self._candidate_should_be_analyzed(candidate)
+        )
+        scores.extend((pivot.review_priority_score or pivot.confidence_score, 0.7) for pivot in profile_pivots[:5])
+        scores.extend((evidence.confidence_score, 0.5) for evidence in evidences[:5])
         if not scores:
             return 0
-        return round(sum(scores) / len(scores))
+
+        weighted_total = sum(score * weight for score, weight in scores)
+        weight_total = sum(weight for _, weight in scores)
+        base_score = round(weighted_total / weight_total)
+        penalty = self._build_review_priority_penalty(candidate_emails, profile_pivots)
+        return max(0, min(100, base_score - penalty))
+
+    def _build_confidence_breakdown(
+        self,
+        candidate_emails: list[EmailCandidate],
+        profile_pivots: list[ProfilePivot],
+        evidences: list[EvidenceRecord],
+    ) -> dict[str, int]:
+        """Build separate confidence-like scores by claim type."""
+        valid_candidates = [
+            candidate for candidate in candidate_emails if self._candidate_should_be_analyzed(candidate)
+        ]
+        domain_scores = [
+            80 if evidence.evidence_strength == "moderate_format_and_dns" else 35
+            for evidence in evidences
+            if evidence.category == "domain"
+        ]
+        profile_scores = [
+            pivot.review_priority_score or pivot.confidence_score for pivot in profile_pivots[:5]
+        ]
+        identity_scores = [
+            candidate.review_priority_score
+            for candidate in valid_candidates
+            if candidate.evidence_strength not in {"none", "weak_inferred"}
+        ]
+
+        return {
+            "email_format_confidence": self._average(
+                [candidate.review_priority_score for candidate in valid_candidates]
+            ),
+            "domain_confidence": self._average(domain_scores),
+            "profile_existence_confidence": self._average(profile_scores),
+            "identity_correlation_confidence": self._average(identity_scores),
+        }
+
+    def _build_review_priority_penalty(
+        self,
+        candidate_emails: list[EmailCandidate],
+        profile_pivots: list[ProfilePivot],
+    ) -> int:
+        """Penalize noisy investigations so review priority is not inflated."""
+        inferred_candidates = [
+            candidate
+            for candidate in candidate_emails
+            if candidate.source in {"username_domain_inference", "name_domain_inference"}
+        ]
+        ambiguous_pivots = [
+            pivot
+            for pivot in profile_pivots
+            if pivot.resolution_status
+            in {"ambiguous", "blocked_by_platform", "rate_limited", "timeout", "request_error"}
+        ]
+        rejected_candidates = [
+            candidate
+            for candidate in candidate_emails
+            if candidate.status.startswith("rejected_")
+        ]
+        penalty = 0
+        if len(inferred_candidates) > 3:
+            penalty += min(15, len(inferred_candidates) - 3)
+        if ambiguous_pivots:
+            penalty += min(15, round(len(ambiguous_pivots) / 2))
+        if rejected_candidates:
+            penalty += min(15, len(rejected_candidates) * 2)
+        return penalty
+
+    def _average(self, values: list[int]) -> int:
+        """Return a rounded average with an empty-list fallback."""
+        if not values:
+            return 0
+        return round(sum(values) / len(values))
 
     def _dedupe_preserve_order(self, items: list[str]) -> list[str]:
         """Remove duplicates while preserving the original order."""

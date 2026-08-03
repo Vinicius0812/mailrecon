@@ -12,10 +12,10 @@ O projeto é intencionalmente pequeno, ético e adequado para portfólio de cibe
 
 - Validate an email address | Validar um endereço de e-mail
 - Extract and inspect the domain | Extrair e inspecionar o domínio
-- Query DNS and MX records | Consultar registros DNS e MX
+- Query DNS, MX, SPF, DMARC, and provider-family signals | Consultar sinais de DNS, MX, SPF, DMARC e família de provedor
 - Optionally query Have I Been Pwned | Consultar opcionalmente o Have I Been Pwned
 - Start reusable OSINT investigations from multiple seed types | Iniciar investigações OSINT reutilizáveis a partir de vários tipos de semente
-- Score investigation confidence and prioritize leads | Gerar score de confiança da investigação e priorizar leads
+- Score review priority and explain evidence limitations | Gerar prioridade de revisão e explicar limitações das evidências
 - Show a friendly terminal summary | Mostrar um resumo amigável no terminal
 - Export reports as JSON and Markdown | Exportar relatórios em JSON e Markdown
 
@@ -46,7 +46,7 @@ Este projeto foi criado como uma peça de portfólio de cibersegurança em níve
 - Typer for the CLI | Typer para a CLI
 - httpx for HTTP calls | httpx para chamadas HTTP
 - email-validator for email validation | email-validator para validação de e-mail
-- dnspython for DNS and MX lookups | dnspython para consultas DNS e MX
+- dnspython for DNS, MX, SPF, DMARC, and provider lookups | dnspython para consultas DNS, MX, SPF, DMARC e provedor
 - python-dotenv for environment configuration | python-dotenv para configuração por ambiente
 - pytest for basic tests | pytest para testes básicos
 
@@ -321,11 +321,12 @@ Exporte um relatório estruturado de investigação:
 mailrecon investigate --email user@example.com --domain example.com --json-out reports/investigation.json --md-out reports/investigation.md
 ```
 
-Reveal full email addresses in the terminal summary and Markdown report when needed:
+Human-readable `analyze` and `investigate` output masks email addresses by default. Reveal full email addresses in the terminal summary and Markdown report only when needed:
 
 Mostre e-mails completos no resumo do terminal e no relatório Markdown quando necessário:
 
 ```bash
+mailrecon analyze user@example.com --md-out reports/result.md --reveal-emails
 mailrecon investigate --email user@example.com --domain example.com --md-out reports/investigation.md --reveal-emails
 ```
 
@@ -387,6 +388,9 @@ Copie `.env.example` para `.env` e preencha os valores que quiser usar:
 HIBP_API_KEY=
 MAILRECON_HTTP_TIMEOUT=10.0
 MAILRECON_DNS_TIMEOUT=5.0
+MAILRECON_ENABLE_LAB_SMTP=0
+MAILRECON_LAB_SMTP_ALLOW_HOSTS=
+MAILRECON_LAB_SMTP_TIMEOUT=3.0
 ```
 
 ## HIBP API Key | Chave da API do HIBP
@@ -419,9 +423,9 @@ O MailRecon também funciona sem a chave quando você usa `--no-hibp`.
 
 ## Investigation Notes | Notas de Investigação
 
-MailRecon treats investigation results as OSINT leads, not definitive proof. The investigation workflow records source, reference, collection date, method, confidence, and observations for each evidence item, while masking sensitive email details in human-readable outputs when practical.
+MailRecon treats investigation results as OSINT leads, not definitive proof. The investigation workflow records source, reference, collection date, method, confidence, evidence strength, decision reasons, limitations, and observations for each evidence item, while masking sensitive email details in human-readable outputs when practical.
 
-O MailRecon trata resultados de investigação como indícios OSINT, não como prova definitiva. O fluxo de investigação registra fonte, referência, data de coleta, método, confiança e observações para cada evidência, além de mascarar detalhes sensíveis de e-mails nas saídas legíveis sempre que possível.
+O MailRecon trata resultados de investigação como indícios OSINT, não como prova definitiva. O fluxo de investigação registra fonte, referência, data de coleta, método, confiança, força da evidência, razões de decisão, limitações e observações para cada evidência, além de mascarar detalhes sensíveis de e-mails nas saídas legíveis sempre que possível.
 
 If you need full email addresses in the human-readable investigation output, use `--reveal-emails`. JSON exports already retain the full structured values.
 
@@ -435,6 +439,10 @@ When `--check-public-profiles` is enabled, MailRecon only resolves the already-g
 
 Quando `--check-public-profiles` está habilitado, o MailRecon apenas resolve as URLs públicas já geradas e registra status conservadores como `public_match_possible`, `not_found`, `ambiguous`, `blocked_by_platform` e `rate_limited`.
 
+Domain checks now enrich public DNS context with A, AAAA, MX, Null MX, TXT, SPF, DMARC, NS, and provider-family signals. These signals describe domain posture and mail capability; they do not confirm that an individual mailbox exists.
+
+As verificações de domínio agora enriquecem o contexto DNS público com sinais de A, AAAA, MX, Null MX, TXT, SPF, DMARC, NS e família de provedor. Esses sinais descrevem postura do domínio e capacidade de e-mail; eles não confirmam que uma caixa postal individual existe.
+
 The refinement file is temporary project state and should not be committed. It exists only to help manually prune wrong public-profile links from the latest matching investigation.
 
 O arquivo de refinamento é um estado temporário do projeto e não deve ser versionado. Ele existe apenas para ajudar a podar manualmente links públicos incorretos da última investigação correspondente.
@@ -447,20 +455,61 @@ The `lab-admin` command is intentionally simulated. It exists so you can practic
 
 O comando `lab-admin` é intencionalmente simulado. Ele existe para que você possa praticar classificação, relatório e tratamento de evidências em um fluxo acadêmico controlado, sem tocar em fluxos reais de autenticação ou recuperação.
 
-## Confidence Score | Score de Confiança
+## Lab SMTP Validation | Validação SMTP de Laboratório
 
-MailRecon now assigns a simple confidence score from `0` to `100` for candidate emails, public-profile pivots, evidence records, and the overall investigation. The score is meant to help prioritize manual review, not to act as proof.
+`lab-smtp-validate` is a separated lab-only command for closed demonstrations. It is not part of the normal `analyze` or `investigate` workflow.
 
-O MailRecon agora atribui um score simples de `0` a `100` para e-mails candidatos, pivôs de perfis públicos, evidências e para a investigação como um todo. O score serve para ajudar a priorizar a revisão manual, não para funcionar como prova.
+`lab-smtp-validate` é um comando separado e exclusivo para demonstrações fechadas de laboratório. Ele não faz parte do fluxo normal de `analyze` ou `investigate`.
+
+Mock mode uses no network:
+
+Modo mock não usa rede:
+
+```bash
+mailrecon lab-smtp-validate user@lab.local --lab-domain lab.local --transport mock --check vrfy
+```
+
+Networked lab checks require all safety gates:
+
+Checagens lab com rede exigem todos os controles de segurança:
+
+- `MAILRECON_ENABLE_LAB_SMTP=1`
+- `--confirm-lab-only`
+- explicit `--host`, never automatic MX discovery
+- email domain matching `--lab-domain`
+- loopback/private/link-local host only
+- at most three requested probes
+
+Example for a local fake SMTP server:
+
+Exemplo para um servidor SMTP fake local:
+
+```bash
+MAILRECON_ENABLE_LAB_SMTP=1 mailrecon lab-smtp-validate user@lab.local --lab-domain lab.local --transport localhost --host 127.0.0.1 --port 2525 --confirm-lab-only --check vrfy
+```
+
+The command never reports “mailbox exists”. It reports only whether the tested lab server accepted or rejected the specific lab interaction.
+
+O comando nunca afirma “a caixa postal existe”. Ele relata apenas se o servidor de laboratório testado aceitou ou rejeitou aquela interação específica de laboratório.
+
+## Review Priority | Prioridade de Revisão
+
+MailRecon now separates factual confidence from review priority. `review_priority_score` helps decide what to inspect first; `confidence`, `evidence_strength`, `decision_reasons`, and `limitations` explain how strong or weak each claim is.
+
+O MailRecon agora separa confiança factual de prioridade de revisão. `review_priority_score` ajuda a decidir o que inspecionar primeiro; `confidence`, `evidence_strength`, `decision_reasons` e `limitations` explicam quão forte ou fraca é cada afirmação.
 
 High-level interpretation:
 
 Interpretação de alto nível:
 
-- `80-100`: strong lead worth reviewing first | lead forte que merece revisão primeiro
-- `50-79`: useful lead with moderate confidence | lead útil com confiança moderada
-- `1-49`: weak or speculative lead | lead fraco ou especulativo
-- `0`: no meaningful confidence signal | sem sinal de confiança relevante
+- `80-100`: high review priority with multiple useful signals | alta prioridade de revisão com múltiplos sinais úteis
+- `50-79`: useful lead, still not proof | lead útil, ainda sem ser prova
+- `1-49`: weak, inferred, ambiguous, or speculative lead | lead fraco, inferido, ambíguo ou especulativo
+- `0`: rejected or no meaningful review signal | rejeitado ou sem sinal relevante de revisão
+
+Generated candidates are capped conservatively. Name/domain inference, username/domain inference, role accounts, disposable domains, HTTP-only profile checks, and HIBP `no_breaches` results are all treated as limited evidence unless independent public signals correlate.
+
+Candidatos gerados recebem tetos conservadores. Inferência por nome/domínio, inferência por username/domínio, contas funcionais, domínios descartáveis, checagens de perfil apenas por HTTP e resultados HIBP `no_breaches` são tratados como evidência limitada até existir correlação com sinais públicos independentes.
 
 ## Development Notes | Notas de Desenvolvimento
 

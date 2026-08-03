@@ -103,7 +103,26 @@ class HibpService:
                 error=f"HIBP returned HTTP {response.status_code}.",
             )
 
-        breaches = response.json()
+        try:
+            breaches = response.json()
+        except ValueError:
+            return HibpResult(
+                queried=True,
+                status="invalid_response",
+                breaches=[],
+                error="HIBP returned a response that was not valid JSON.",
+            )
+
+        if not isinstance(breaches, list) or not all(
+            isinstance(breach, dict) for breach in breaches
+        ):
+            return HibpResult(
+                queried=True,
+                status="invalid_response",
+                breaches=[],
+                error="HIBP returned an unexpected response shape.",
+            )
+
         return HibpResult(
             queried=True,
             status="breaches_found" if breaches else "no_breaches",
