@@ -107,6 +107,29 @@ Verificação local em Windows / Python 3.11.9:
 
 Arquivos deste bloco: `src/mailrecon/reporting/html.py`, `tests/test_html_reports.py`, `README.md`, `READMEeng.md` e este relatório. Sem commit/push pelo executor, rede real, leitura de `.env` real/credenciais/estado/relatórios reais ou testes em contas. Este limite é por valor e por chamada de decodificação, não um orçamento global de tamanho/tempo do relatório nem uma revisão de todos os regex de mascaramento. Linux, Python 3.13, CI remota e fechamento da cobertura Blue residual permanecem não verificados por este executor.
 
+## Terceiro extra: contrato de dependências da CLI
+
+A consolidação final do relatório foi pausada após o primeiro resultado remoto. Houve atraso além do prazo previsto durante a espera de autorização/acesso ao GitHub para obter logs; não se presume cumprimento do prazo nem sucesso remoto com base nos checks locais anteriores. Conforme logs públicos obtidos pelo coordenador, a [primeira CI, run 37573754882](https://github.com/Vinicius0812/mailrecon/actions/runs/37573754882), terminou em **failure nos quatro jobs**, na etapa `Offline test suite`; checkout e instalação passaram. O log Linux/Python 3.11 apresentou cinco erros de collection com `ModuleNotFoundError: No module named 'click'`, importado diretamente por `cli/app.py` e `cli/localization.py`. O resolvedor limpo instalou Typer 0.27.3, Rich 15, python-dotenv 1.2.4 e pytest 8.4.2; o ambiente local aprovado usava Typer 0.25.1 e Click 8.3.3.
+
+[Typer 0.26.0 incorporou Click e removeu o suporte à integração com tipos/plugins Click externos](https://typer.tiangolo.com/release-notes/#0260). A CLI atual depende do contexto, exceções, classes e hooks do Click externo para localização; declarar somente Click com Typer 0.27.3 não basta para garantir o contrato. A correção conservadora em `pyproject.toml` declara **Typer `>=0.25.1,<0.26` e Click `>=8.3.3,<8.4` como dependências diretas de runtime**, partindo das versões localmente testadas. Não houve rewrite da CLI nem instalação avulsa de Click no workflow para esconder a falha.
+
+Dois testes em `tests/test_packaging.py` verificam as faixas explícitas no TOML e nos metadados gerados pelo backend, incluindo presença de Click em runtime, mínimos conhecidos e exclusão de Typer 0.26+. Usam `tomllib`, parser de email da biblioteca padrão e setuptools já declarado em dev; nenhuma dependência adicional de testes foi introduzida. Ambos os READMEs documentam o motivo da faixa pré-0.26. SMTP, HTTP, privacidade, protocolos da CLI, licença e versão não foram alterados.
+
+A validação deste extra inclui suíte sob guard sem rede/Dotenv, build sem isolamento, smoke do console real instalado e instalação limpa de wheel com extra dev em venv temporário. Somente o download normal das dependências do PyPI foi autorizado nesta instalação, não consultas OSINT, leitura de `.env` real/credenciais ou código arbitrário. A rede do sandbox inicialmente bloqueou pip; a instalação foi repetida com permissão de rede para tooling. **Uma segunda execução remota da CI ainda não possui resultado confirmado**; sua conclusão não será presumida a partir da reprodução local.
+
+Resultados deste terceiro extra, Windows / Python 3.11.9:
+
+- Testes de empacotamento sob guard: **96 passed in 0.95s**, incluindo duas regressões novas do contrato CLI.
+- Suíte completa no ambiente local sob guard: **915 passed in 6.64s**.
+- Build `python -m build --no-isolation`: **exit 0**, sdist e wheel `0.1.0` gerados; package smoke no ambiente local: **exit 0**.
+- Instalação do wheel `[dev]` em venv temporário sem system-site-packages, pelo resolvedor normal do PyPI, somente wheels e sem cache: **exit 0**. Metadados instalados confirmam `typer<0.26,>=0.25.1` e `click<8.4,>=8.3.3`; versões resolvidas: Typer 0.25.1, Click 8.3.3, Rich 15.0.0, python-dotenv 1.2.4, pytest 8.4.2 e setuptools 84.0.0.
+- `pip check` no venv limpo: **exit 0**, `No broken requirements found`.
+- Suíte completa do repositório no venv limpo com dependências recém-resolvidas, guard de rede e Dotenv desabilitado: **915 passed in 6.42s**.
+- Package smoke no venv limpo: **exit 0**; wheel/sdist validados, wrapper real instalado em outro diretório temporário, origem dos imports/metadados no wheel e `sources`/`demo` sob guard confirmados. Venvs temporários removidos ao final.
+- `git diff --check`: **exit 0**, sem erros de whitespace; avisos LF/CRLF não são falhas.
+
+Arquivos deste bloco: `pyproject.toml`, `tests/test_packaging.py`, ambos os READMEs e este relatório. Sem commit/push ou alteração do workflow pelo executor. Reprodução limpa local aprovada não equivale a teste em Linux/Python 3.13 ou a resultado green da CI; a consolidação final dos estados históricos do relatório continua adiada até o coordenador confirmar os próximos resultados.
+
 ## Fontes oficiais verificadas
 
 - [GitHub REST Users](https://docs.github.com/en/rest/users/users#get-a-user).
@@ -136,7 +159,7 @@ RDAP, grafo de relações, histórico persistente e gestão de casos não foram 
 - Build/sdist/wheel e smoke de pacote em Windows: **aprovados pelo coordenador**.
 - Implementação funcional da fase 3: **aceita pelo coordenador**.
 - Revisão Blue parcial informada pelo coordenador: **read-only, 44/44 checks, sem achados reportáveis; cobertura canônica parcial e resíduo `deferredpending`**. Fechamento final permanece gate de publicação.
-- CI remota e smoke de pacote em Linux: **pendentes de execução**.
+- Primeira CI remota: **failure em 4/4 jobs, etapa Offline test suite, por falta de Click no contrato de dependências**. Correção no terceiro extra; resultado da segunda CI e smoke remoto ainda não confirmados.
 - Resultado Daybreak, se solicitado: **não executado**.
 - Feedback Blue: **candidato de custo local do decoder suprimido como vulnerabilidade e tratado no segundo extra de robustez**; detalhes e fechamento do resíduo a esclarecer pelo coordenador.
 - Commit/push/publicação: **responsabilidade do coordenador, ainda pendentes para a etapa 3**.

@@ -7,12 +7,38 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tomllib
 import zipfile
 
 import pytest
 from setuptools._distutils.filelist import FileList
 
 from scripts import package_smoke as smoke
+
+
+def test_runtime_cli_dependency_contract():
+    source = Path(__file__).resolve().parents[1] / 'pyproject.toml'
+    project = tomllib.loads(source.read_text(encoding='utf-8'))['project']
+    runtime = project['dependencies']
+    # Exact policy assertions protect the tested minima and pre-vendoring boundary.
+    assert [item for item in runtime if item.split('>')[0].casefold() == 'typer'] == ['typer>=0.25.1,<0.26']
+    assert [item for item in runtime if item.split('>')[0].casefold() == 'click'] == ['click>=8.3.3,<8.4']
+    assert not any(item.casefold().startswith(('typer', 'click'))
+                   for item in project['optional-dependencies']['dev'])
+
+
+def test_generated_core_metadata_declares_runtime_cli_contract():
+    from email.parser import Parser
+    from setuptools import Distribution
+    distribution = Distribution({'name': 'mailrecon', 'version': '0.1.0'})
+    distribution.parse_config_files(filenames=[str(Path(__file__).resolve().parents[1] / 'pyproject.toml')])
+    output = io.StringIO()
+    distribution.metadata.write_pkg_file(output)
+    metadata = Parser().parsestr(output.getvalue())
+    requirements = metadata.get_all('Requires-Dist', [])
+    assert any(item.startswith('typer') and '>=0.25.1' in item and '<0.26' in item for item in requirements)
+    assert any(item.startswith('click') and '>=8.3.3' in item and '<8.4' in item for item in requirements)
+    assert all('extra ==' not in item for item in requirements if item.startswith(('typer', 'click')))
 
 
 def fake_archives(tmp_path, wheel_extra=(), sdist_extra=()):

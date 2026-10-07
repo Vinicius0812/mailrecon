@@ -58,6 +58,8 @@ It does not automate login, account recovery, credential testing, abusive enumer
 
 ## Installation
 
+CLI compatibility: the package directly declares Typer `>=0.25.1,<0.26` and Click `>=8.3.3,<8.4`. Localized help, context and errors rely on external Click hooks/classes; [Typer 0.26.0 vendored Click and removed support for that integration](https://typer.tiangolo.com/release-notes/#0260). Installing Click separately does not restore that contract with Typer 0.26+. Upgrading Typer outside the declared range requires a separate CLI migration.
+
 Requirements: Python 3.11+, Git, and network access to install dependencies. HIBP is optional and requires an API-enabled key.
 
 ### Windows / PowerShell

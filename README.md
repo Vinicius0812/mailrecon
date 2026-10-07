@@ -60,6 +60,8 @@ Não automatiza login, recuperação de conta, testes de credenciais, enumeraç�
 
 Requisitos: Python 3.11+, Git e rede para instalar dependências. HIBP é opcional e requer chave com acesso à API.
 
+Compatibilidade da CLI: o pacote declara Typer `>=0.25.1,<0.26` e Click `>=8.3.3,<8.4` diretamente. Help, contexto e erros localizados usam hooks/classes do Click externo; [Typer 0.26.0 passou a incorporar Click e removeu suporte a essa integração](https://typer.tiangolo.com/release-notes/#0260). Instalar Click à parte não restaura esse contrato em Typer 0.26+. Não atualize Typer fora da faixa declarada sem uma migração separada da CLI.
+
 ### Windows / PowerShell
 
 ```powershell
