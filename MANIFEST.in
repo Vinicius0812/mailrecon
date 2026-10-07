@@ -1,0 +1,24 @@
+include READMEeng.md
+include .env.example
+include scripts/*.py
+include docs/*.md
+prune reports
+prune report
+prune state
+prune .mailrecon-temp
+prune .venv
+prune venv
+prune env
+prune .tox
+prune .nox
+prune .git
+prune .hg
+prune .svn
+prune .aws
+prune .ssh
+prune .agents
+prune .codex
+prune build
+prune dist
+global-exclude .env .env.* __pycache__ *.py[cod] *.pem *.key credentials credentials.* secrets secrets.* id_rsa id_ed25519 last-investigation-refinement.json
+include .env.example

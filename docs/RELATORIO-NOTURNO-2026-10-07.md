@@ -63,6 +63,29 @@ QA local, sem servidor:
 
 Os arquivos são reproduzíveis por `mailrecon demo --output-dir reports` e `mailrecon --language en demo --output-dir reports/demo-en`. Se já existirem, escolha outro diretório; não há sobrescrita automática. Os timestamps da demo são fixos, não observações reais.
 
+## Extra autorizado: empacotamento e smoke offline
+
+Bloco adicional executado na raiz compartilhada, branch `codex/mailrecon-precision`, após onboarding somente leitura. Os três commits existentes foram preservados; este extra não foi commitado nem enviado por push. Nenhum outro agente foi aberto. Não altera runtime, modelos, protocolos, versão, dependências de runtime, workflow de CI ou licença.
+
+A lacuna foi confirmada por listagem do sdist anterior: faltavam `READMEeng.md` e `scripts/`, embora o pacote incluísse o teste dos exemplos dos dois READMEs. O novo `MANIFEST.in` mantém os defaults do setuptools e inclui explicitamente `READMEeng.md`, `.env.example`, `scripts/*.py` e `docs/*.md`. Exclui ambiente real, credenciais por nomes conhecidos, relatórios de execução, estado, ambientes virtuais e metadados locais de ferramentas/versionamento. A documentação técnica deste relatório é autorizada; não é relatório de investigação real.
+
+`scripts/package_smoke.py` exige exatamente um wheel e um sdist do MailRecon. Valida arquivos obrigatórios, caminhos portáveis, raiz do sdist, duplicações inclusive case-insensitive, nomes sensíveis e tipos de membros. Rejeita traversal, caminhos absolutos/Windows ambíguos, links e tipos especiais; o sdist é apenas inspecionado, nunca extraído pelo smoke. Esses checks de nomes não são um detector de segredos presentes no conteúdo de arquivos com nomes permitidos.
+
+O wheel é instalado em diretório temporário com `--no-index --no-deps --no-compile`, sem download, configuração de pip ou checagem de versão remota. O smoke executa o wrapper real instalado (`mailrecon.exe` no Windows, `mailrecon` no Linux), não `CliRunner`. Cada execução carrega um guard temporário via `sitecustomize`, bloqueando conexões/envios por socket, resolução DNS e SMTP/SMTP_SSL antes dos imports do MailRecon; `.env` permanece desabilitado. Falha de startup encerra o processo com código 91. Confirma origem dos imports e metadados no wheel instalado, entrypoint, saída de `sources` e os nove nomes esperados da demo sintética, sem consulta live. O ambiente Python existente fornece as dependências; isso não demonstra instalação autossuficiente em um ambiente vazio nem constitui sandbox de sistema operacional.
+
+Testes novos em `tests/test_packaging.py` usam manifestos e archives sintéticos em diretórios temporários, sem depender de `dist/` preexistente. Cobrem inclusões/exclusões, itens ausentes, duplicatas, caminhos maliciosos, arquivos sensíveis, symlinks/hardlinks/FIFO/device, distribuição única, descoberta do wrapper, ambiente offline, orquestração e falha fechada. Um subprocesso com pacote fictício comprova rejeição das operações de rede antes da aplicação e a origem incorreta dos imports.
+
+Ajuste autorizado após revisão parcial: `setuptools>=68` foi declarado somente no extra `dev` de `pyproject.toml`, com o mesmo mínimo do build-system. O teste do manifesto usa `setuptools._distutils.filelist.FileList` para verificar a semântica real do backend, sem implementar um parser paralelo. Dependências de build instaladas em ambiente isolado não garantem esse import no ambiente do pytest; a declaração explícita evita depender de setuptools preinstalado em venvs, inclusive Python 3.13, no fluxo `pip install -e '.[dev]'` seguido de pytest. Não houve download ou alteração das dependências de runtime; a compatibilidade em Python 3.13 continua sem execução local.
+
+Resultados locais deste extra, Windows / Python 3.11.9:
+
+- `.venv/Scripts/python.exe scripts/run_offline_tests.py -q`: **877 passed**, incluindo 94 testes novos; guard completo de rede ativo e Dotenv desabilitado.
+- `.venv/Scripts/python.exe -m build --no-isolation`: **exit 0**, sdist e wheel `0.1.0` gerados; wheel construído a partir do sdist. Avisos de exclusões sem correspondência são esperados, não falhas.
+- `.venv/Scripts/python.exe scripts/package_smoke.py`: **exit 0**, validação wheel/sdist e wrapper instalado com `sources`/`demo`, origem dos imports e guard aprovados.
+- `git diff --check`: **exit 0**, sem erros de whitespace; avisos locais LF/CRLF não equivalem a erro.
+
+Ambos os READMEs já continham os comandos de build sem isolamento e package smoke, portanto foram preservados. Nenhuma leitura de `.env` real, credenciais, estado ou relatórios de investigação reais; nenhuma rede real, DNS/SMTP/HIBP, teste em contas ou reutilização de código/assets do Mr.Holmes neste extra. Resultados acima são locais: Linux, Python 3.13, CI remota e revisão independente Blue não foram executados por este executor; não se presume aprovação, push ou publicação.
+
 ## Fontes oficiais verificadas
 
 - [GitHub REST Users](https://docs.github.com/en/rest/users/users#get-a-user).
