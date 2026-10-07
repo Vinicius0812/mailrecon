@@ -23,6 +23,7 @@ def build_investigation_result() -> InvestigationResult:
         pivot_suggestions=[],
         limitations=[],
         overall_confidence_score=50,
+        review_priority_score=50,
     )
 
 
@@ -43,13 +44,13 @@ def test_render_investigation_summary_can_reveal_findings_and_risks() -> None:
 
 
 def test_render_summary_masks_email_by_default() -> None:
-    summary = render_summary(build_recon_result())
+    summary = render_summary(build_recon_result(), language="en")
 
     assert "Email              : u**r@example.com" in summary
     assert "Email              : user@example.com" not in summary
 
 
 def test_render_summary_can_reveal_email() -> None:
-    summary = render_summary(build_recon_result(), mask_sensitive=False)
+    summary = render_summary(build_recon_result(), mask_sensitive=False, language="en")
 
     assert "Email              : user@example.com" in summary

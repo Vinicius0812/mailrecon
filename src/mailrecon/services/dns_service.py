@@ -3,6 +3,7 @@
 import dns.exception
 import dns.resolver
 
+from mailrecon.core.i18n import msg
 from mailrecon.core.models import DnsLookupResult
 
 
@@ -29,17 +30,17 @@ class DnsService:
         try:
             answers = resolver.resolve(domain, record_type)
         except dns.resolver.NXDOMAIN:
-            return [], "Domain does not exist in DNS."
+            return [], msg("dns.error.nxdomain")
         except dns.resolver.NoAnswer:
-            return [], f"No {record_type} records found."
+            return [], msg("dns.error.no_records", record_type=record_type)
         except dns.resolver.NoNameservers:
-            return [], "No nameservers responded to the DNS query."
+            return [], msg("dns.error.nameservers")
         except dns.exception.Timeout:
-            return [], f"DNS lookup for {record_type} timed out."
+            return [], msg("dns.error.timeout", record_type=record_type)
         except dns.resolver.LifetimeTimeout:
-            return [], f"DNS lookup for {record_type} exceeded the configured timeout."
+            return [], msg("dns.error.lifetime_timeout", record_type=record_type)
         except dns.exception.DNSException as exc:
-            return [], f"DNS error while querying {record_type}: {exc}"
+            return [], msg("dns.error.query", record_type=record_type, error=str(exc))
 
         if record_type == "MX":
             records = [str(answer.exchange).rstrip(".") for answer in answers]
@@ -75,7 +76,7 @@ class DnsService:
         ns_records, ns_error = self._lookup_records(resolver, domain, "NS")
 
         if dmarc_error == "Domain does not exist in DNS.":
-            dmarc_error = "No DMARC records found."
+            dmarc_error = msg("dns.error.no_dmarc")
 
         null_mx = mx_records == [""]
         if null_mx:
@@ -92,7 +93,7 @@ class DnsService:
                 errors.append(error)
 
         if null_mx:
-            errors.append("Domain publishes Null MX and declares it does not accept email.")
+            errors.append(msg("dns.reason.null_mx"))
 
         return DnsLookupResult(
             resolves=bool(a_records or aaaa_records or mx_records),

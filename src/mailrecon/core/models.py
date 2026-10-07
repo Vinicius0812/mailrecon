@@ -1,7 +1,9 @@
 """Data models used across the application."""
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+
+from mailrecon.core.i18n import serialize_localized
 
 
 @dataclass(slots=True)
@@ -70,9 +72,9 @@ class ReconResult:
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
-    def to_dict(self) -> dict:
+    def to_dict(self, language: str = "pt-br") -> dict:
         """Convert the result to a serializable dictionary."""
-        return asdict(self)
+        return serialize_localized(self, language=language)
 
 
 @dataclass(slots=True)
@@ -106,6 +108,8 @@ class EvidenceRecord:
     risk_level: str = "none"
     decision_reasons: list[str] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
+    confidence_scope: str = "unspecified"
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -129,6 +133,8 @@ class EmailCandidate:
     role_account_status: str = "not_role_account"
     disposable_status: str = "unknown"
     provider_family: str = "unknown_provider"
+    confidence_scope: str = "unspecified"
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -157,6 +163,8 @@ class ProfilePivot:
     conflicting_fields: list[str] = field(default_factory=list)
     decision_reasons: list[str] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
+    confidence_scope: str = "generated_hypothesis"
+    sources: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -180,9 +188,9 @@ class InvestigationResult:
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
-    def to_dict(self) -> dict:
+    def to_dict(self, language: str = "pt-br") -> dict:
         """Convert the investigation result to a serializable dictionary."""
-        return asdict(self)
+        return serialize_localized(self, language=language)
 
 
 @dataclass(slots=True)
@@ -225,6 +233,6 @@ class SmtpLabValidationResult:
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
-    def to_dict(self) -> dict:
+    def to_dict(self, language: str = "pt-br") -> dict:
         """Convert the SMTP lab result to a serializable dictionary."""
-        return asdict(self)
+        return serialize_localized(self, language=language)

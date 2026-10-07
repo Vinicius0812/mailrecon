@@ -4,6 +4,7 @@ import re
 
 from email_validator import EmailNotValidError, validate_email
 
+from mailrecon.core.i18n import Message, authored, msg
 
 def normalize_email_address(email: str) -> str:
     """Validate and normalize an email address."""
@@ -22,7 +23,10 @@ def validate_email_input(email: str) -> tuple[bool, str, str | None]:
     try:
         normalized = normalize_email_address(email)
     except EmailNotValidError as exc:
-        return False, str(exc), None
+        message = authored(str(exc))
+        if not isinstance(message, Message):
+            message = msg("validation.email.invalid", detail=str(exc))
+        return False, message, None
 
     domain = normalized.rsplit("@", maxsplit=1)[1]
     return True, normalized, domain

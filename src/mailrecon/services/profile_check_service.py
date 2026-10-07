@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from mailrecon.core.i18n import msg
 from mailrecon.core.models import EvidenceRecord, ProfilePivot
 
 
@@ -34,11 +35,20 @@ class ProfileCheckService:
                 resolution_status="timeout",
                 status="blocked_cannot_determine",
                 checked_at=checked_at,
-                review_priority_score=self._score_resolution_status("timeout", pivot.confidence_score),
+                http_status_code=None,
+                final_url=None,
+                confidence="low",
+                confidence_scope="http_reachability",
+                sources=list(dict.fromkeys(pivot.sources + [pivot.platform])),
+                confidence_score=self._score_resolution_status("timeout", pivot.review_priority_score),
+                review_priority_score=self._score_resolution_status("timeout", pivot.review_priority_score),
+                evidence_strength=self._evidence_strength_for_resolution("timeout"),
+                matched_fields=[],
+                missing_fields=self._missing_fields_for_resolution("timeout"),
                 ambiguity_reasons=pivot.ambiguity_reasons + ["timeout"],
-                decision_reasons=pivot.decision_reasons + ["Public profile check timed out."],
-                limitations=pivot.limitations + ["Timeout prevents determining whether the public profile exists."],
-                notes=pivot.notes + ["Public profile check timed out."],
+                decision_reasons=pivot.decision_reasons + [msg("profile.error.timeout")],
+                limitations=pivot.limitations + [msg("profile.limitation.timeout")],
+                notes=pivot.notes + [msg("profile.error.timeout")],
             )
             return updated, self._build_evidence(updated, "timeout")
         except httpx.HTTPError as exc:
@@ -47,16 +57,25 @@ class ProfileCheckService:
                 resolution_status="request_error",
                 status="blocked_cannot_determine",
                 checked_at=checked_at,
-                review_priority_score=self._score_resolution_status("request_error", pivot.confidence_score),
+                http_status_code=None,
+                final_url=None,
+                confidence="low",
+                confidence_scope="http_reachability",
+                sources=list(dict.fromkeys(pivot.sources + [pivot.platform])),
+                confidence_score=self._score_resolution_status("request_error", pivot.review_priority_score),
+                review_priority_score=self._score_resolution_status("request_error", pivot.review_priority_score),
+                evidence_strength=self._evidence_strength_for_resolution("request_error"),
+                matched_fields=[],
+                missing_fields=self._missing_fields_for_resolution("request_error"),
                 ambiguity_reasons=pivot.ambiguity_reasons + ["request_error"],
-                decision_reasons=pivot.decision_reasons + [f"Public profile check failed: {exc}"],
-                limitations=pivot.limitations + ["Request errors prevent determining whether the public profile exists."],
-                notes=pivot.notes + [f"Public profile check failed: {exc}"],
+                decision_reasons=pivot.decision_reasons + [msg("profile.error.request", error=str(exc))],
+                limitations=pivot.limitations + [msg("profile.limitation.request")],
+                notes=pivot.notes + [msg("profile.error.request", error=str(exc))],
             )
             return updated, self._build_evidence(updated, "request_error")
 
         status = self._map_http_status(response.status_code, str(response.url))
-        confidence_score = self._score_resolution_status(status, pivot.confidence_score)
+        confidence_score = self._score_resolution_status(status, pivot.review_priority_score)
         status_label = self._workflow_status_for_resolution(status)
         ambiguity_reasons = pivot.ambiguity_reasons + self._ambiguity_reasons_for_resolution(
             status,
@@ -69,12 +88,15 @@ class ProfileCheckService:
             http_status_code=response.status_code,
             final_url=str(response.url),
             checked_at=checked_at,
+            confidence=self._confidence_label(status),
+            confidence_scope="http_reachability",
+            sources=list(dict.fromkeys(pivot.sources + [pivot.platform])),
             confidence_score=confidence_score,
             review_priority_score=confidence_score,
             evidence_strength=self._evidence_strength_for_resolution(status),
             ambiguity_reasons=ambiguity_reasons,
-            matched_fields=pivot.matched_fields + self._matched_fields_for_resolution(status),
-            missing_fields=pivot.missing_fields + self._missing_fields_for_resolution(status),
+            matched_fields=self._matched_fields_for_resolution(status),
+            missing_fields=self._missing_fields_for_resolution(status),
             decision_reasons=pivot.decision_reasons + self._decision_reasons_for_resolution(status),
             limitations=pivot.limitations + self._limitations_for_resolution(status),
         )
@@ -107,20 +129,24 @@ class ProfileCheckService:
             http_status_code=http_status,
             final_url=pivot.profile_url,
             checked_at=checked_at,
-            confidence_score=self._score_resolution_status(status, pivot.confidence_score),
-            review_priority_score=self._score_resolution_status(status, pivot.confidence_score),
+            confidence=self._confidence_label(status),
+            confidence_scope="synthetic_http_reachability",
+            sources=list(dict.fromkeys(pivot.sources + ["lab_simulation"])),
+            confidence_score=self._score_resolution_status(status, pivot.review_priority_score),
+            review_priority_score=self._score_resolution_status(status, pivot.review_priority_score),
             evidence_strength=self._evidence_strength_for_resolution(status),
             ambiguity_reasons=pivot.ambiguity_reasons + self._ambiguity_reasons_for_resolution(
                 status,
                 pivot.profile_url,
             ),
-            matched_fields=pivot.matched_fields + self._matched_fields_for_resolution(status),
-            missing_fields=pivot.missing_fields + self._missing_fields_for_resolution(status),
+            matched_fields=self._matched_fields_for_resolution(status),
+            missing_fields=self._missing_fields_for_resolution(status),
             decision_reasons=pivot.decision_reasons
             + self._decision_reasons_for_resolution(status)
-            + [f"Lab-only scenario applied: {scenario}."],
-            limitations=pivot.limitations + self._limitations_for_resolution(status),
-            notes=pivot.notes + [f"Lab-only scenario applied: {scenario}."],
+            + [msg("profile.note.lab", scenario=scenario)],
+            limitations=pivot.limitations + self._limitations_for_resolution(status)
+            + [msg("confidence.profile.synthetic_limitation")],
+            notes=pivot.notes + [msg("profile.note.lab", scenario=scenario)],
         )
         return updated, self._build_evidence(updated, status, method="lab_public_profile_check")
 
@@ -131,23 +157,28 @@ class ProfileCheckService:
         method: str = "public_profile_check",
     ) -> EvidenceRecord:
         """Create a structured evidence record for one public profile check."""
-        summary = (
-            f"Public profile check for {pivot.platform}/{pivot.handle} returned status {status}."
+        summary = msg(
+            "confidence.profile.synthetic_summary" if method == "lab_public_profile_check" else "profile.evidence.summary",
+            platform=pivot.platform,
+            handle=pivot.handle,
+            status=status,
         )
         observations = (
-            f"http_status={pivot.http_status_code}, final_url={pivot.final_url}"
+            msg("confidence.profile.observations", http_status=pivot.http_status_code, final_url=pivot.final_url)
             if pivot.http_status_code is not None
             else None
         )
         return EvidenceRecord(
-            title="Public profile resolution",
+            title=msg("profile.evidence.title"),
             category="public_profile",
             source=pivot.platform,
             reference=pivot.profile_url,
             collected_at=pivot.checked_at or datetime.now(timezone.utc).isoformat(),
             method=method,
-            confidence=self._confidence_label(status),
+            confidence=pivot.confidence,
             confidence_score=pivot.confidence_score,
+            confidence_scope=pivot.confidence_scope,
+            sources=list(pivot.sources),
             summary=summary,
             observations=observations,
             evidence_strength=pivot.evidence_strength,
@@ -255,24 +286,24 @@ class ProfileCheckService:
         """Explain the profile resolution decision."""
         mapping = {
             "public_match_possible": [
-                "Public URL returned a resolvable page signal.",
-                "HTTP success alone is retained only as weak public evidence.",
+                msg("profile.reason.resolves"),
+                msg("profile.reason.weak_http"),
             ],
-            "not_found": ["Public URL returned not found and is rejected as a profile lead."],
-            "blocked_by_platform": ["Platform blocked the public check, so existence remains ambiguous."],
-            "rate_limited": ["Platform rate-limited the public check, so existence remains ambiguous."],
-            "timeout": ["Public profile check timed out."],
-            "request_error": ["Public profile check returned a request error."],
-            "ambiguous": ["Public profile signal is ambiguous and requires manual review."],
+            "not_found": [msg("profile.reason.not_found")],
+            "blocked_by_platform": [msg("profile.reason.blocked")],
+            "rate_limited": [msg("profile.reason.rate_limited")],
+            "timeout": [msg("profile.error.timeout")],
+            "request_error": [msg("profile.reason.request_error")],
+            "ambiguous": [msg("profile.reason.ambiguous")],
         }
-        return mapping.get(status, ["Public profile signal requires manual review."])
+        return mapping.get(status, [msg("profile.reason.manual_review")])
 
     def _limitations_for_resolution(self, status: str) -> list[str]:
         """Explain why profile checks do not confirm identity ownership."""
         limitations = [
-            "Public profile checks do not use login, recovery, credential, or hidden endpoints.",
-            "A reachable profile URL does not prove ownership by the email subject.",
+            msg("profile.limitation.no_login"),
+            msg("profile.limitation.ownership"),
         ]
         if status == "public_match_possible":
-            limitations.append("Independent public correlation is required before treating this as probable.")
+            limitations.append(msg("profile.limitation.correlation"))
         return limitations

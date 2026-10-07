@@ -56,6 +56,10 @@ def test_investigation_service_builds_candidates_from_multiple_seeds() -> None:
     assert result.overall_confidence_score > 0
     assert result.review_priority_score > 0
     assert result.confidence_breakdown
+    assert result.confidence_breakdown["email_format_confidence"] == 100
+    assert result.confidence_breakdown["profile_existence_confidence"] == 0
+    assert result.confidence_breakdown["identity_correlation_confidence"] == 0
+    assert all(candidate.sources for candidate in result.candidate_emails)
     assert all(candidate.confidence_score >= 0 for candidate in result.candidate_emails)
     assert result.profile_pivots
     assert all(pivot.confidence_score >= 0 for pivot in result.profile_pivots)
@@ -105,6 +109,9 @@ def test_investigation_service_masks_invalid_candidate_email() -> None:
 
     assert result.candidate_emails[0].status == "rejected_invalid_format"
     assert result.candidate_emails[0].notes
+    assert result.candidate_emails[0].confidence == "low"
+    assert result.candidate_emails[0].confidence_scope == "provided_address"
+    assert result.confidence_breakdown["email_format_confidence"] == 0
 
 
 def test_investigation_service_can_simulate_public_profile_checks() -> None:
@@ -126,6 +133,9 @@ def test_investigation_service_can_simulate_public_profile_checks() -> None:
     assert result.profile_pivots
     assert all(pivot.resolution_status == "public_match_possible" for pivot in result.profile_pivots)
     assert any(evidence.category == "public_profile" for evidence in result.evidences)
+    assert all(pivot.confidence_scope == "synthetic_http_reachability" for pivot in result.profile_pivots)
+    assert result.confidence_breakdown["profile_existence_confidence"] == 0
+    assert result.confidence_breakdown["identity_correlation_confidence"] == 0
 
 
 def test_investigation_service_normalizes_usernames_before_building_pivots() -> None:

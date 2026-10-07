@@ -2,11 +2,19 @@
 
 from pathlib import Path
 
+import click
 import typer
+
+from mailrecon.cli.localization import (
+    LocalizedCommand, LocalizedGroup, confirm, language,
+    markdown_language as resolve_markdown_language, text,
+)
+from mailrecon.core.i18n import Language, msg, translate
 
 from mailrecon.core.config import load_settings
 from mailrecon.core.models import InvestigationInput
 from mailrecon.reporting.console import (
+    _mask_text,
     render_investigation_summary,
     render_smtp_lab_summary,
     render_summary,
@@ -26,6 +34,7 @@ from mailrecon.services.recon_service import ReconService
 from mailrecon.services.smtp_lab_service import SmtpLabValidationService
 
 app = typer.Typer(
+    cls=LocalizedGroup,
     help="Educational CLI for email recon and validation.",
     no_args_is_help=False,
     invoke_without_command=True,
@@ -33,8 +42,12 @@ app = typer.Typer(
 
 
 @app.callback()
-def main(ctx: typer.Context) -> None:
+def main(
+    ctx: typer.Context,
+    language: Language = typer.Option(Language.PT_BR, "--language", help="Interface language: pt-br or en."),
+) -> None:
     """MailRecon command group."""
+    ctx.meta["language"] = language.value
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())
         raise typer.Exit()
@@ -72,7 +85,7 @@ def _build_investigation_service(use_hibp: bool) -> InvestigationService:
 
 def _build_refinement_state_service() -> RefinementStateService:
     """Compose the helper that stores temporary refinement data."""
-    return RefinementStateService()
+    return RefinementStateService(language=language())
 
 
 def _build_smtp_lab_validation_service() -> SmtpLabValidationService:
@@ -93,9 +106,10 @@ def _run_investigation(
     json_out: Path | None,
     md_out: Path | None,
     reveal_emails: bool,
-    markdown_language: str,
+    markdown_language: str | Language | None,
 ) -> None:
     """Execute the investigation flow shared by CLI and interactive mode."""
+    resolve_markdown_language(markdown_language)
     investigation_service = _build_investigation_service(use_hibp=use_hibp)
     refinement_state_service = _build_refinement_state_service()
 
@@ -116,38 +130,38 @@ def _run_investigation(
             },
         )
     except ValueError as exc:
-        typer.secho(f"Invalid investigation input: {exc}", fg=typer.colors.RED, err=True)
+        typer.secho(text("cli.invalid_investigation", error=_error_detail(exc)), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
     except Exception as exc:
-        typer.secho(f"Investigation failed: {exc}", fg=typer.colors.RED, err=True)
+        typer.secho(text("cli.investigation_failed", error=_error_detail(exc)), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(render_investigation_summary(result, mask_sensitive=not reveal_emails))
+    typer.echo(render_investigation_summary(result, mask_sensitive=not reveal_emails, language=language()))
     typer.secho(
-        f"Refinement file ready at: {result.refinement_file_path}",
+        text("cli.refinement_ready", path=result.refinement_file_path),
         fg=typer.colors.BLUE,
     )
     if result.refinement_excluded_links:
         typer.secho(
-            f"Applied refinement exclusions: {len(result.refinement_excluded_links)} link(s).",
+            text("cli.exclusions", count=len(result.refinement_excluded_links)),
             fg=typer.colors.YELLOW,
         )
 
     if json_out is not None:
-        export_path = export_json(result, json_out)
-        typer.secho(f"JSON report saved to: {export_path}", fg=typer.colors.GREEN)
+        export_path = _save_report(export_json, result, json_out, language=language())
+        typer.secho(text("cli.json_saved", path=export_path), fg=typer.colors.GREEN)
 
     if md_out is not None:
-        export_path = export_investigation_markdown(
-            result,
+        export_path = _save_report(
+            export_investigation_markdown, result,
             md_out,
             mask_sensitive=not reveal_emails,
-            language=markdown_language.lower(),
+            language=resolve_markdown_language(markdown_language),
         )
-        typer.secho(f"Markdown report saved to: {export_path}", fg=typer.colors.GREEN)
+        typer.secho(text("cli.markdown_saved", path=export_path), fg=typer.colors.GREEN)
 
 
-@app.command("analyze")
+@app.command("analyze", cls=LocalizedCommand)
 def analyze(
     email: str = typer.Argument(..., help="Email address to analyze."),
     json_out: Path | None = typer.Option(
@@ -170,6 +184,9 @@ def analyze(
         "--hibp/--no-hibp",
         help="Enable or disable Have I Been Pwned lookups.",
     ),
+    markdown_language: Language | None = typer.Option(
+        None, "--markdown-language", help="Markdown report language: en or pt-br.",
+    ),
 ) -> None:
     """Analyze an email address using public and permitted data sources."""
     recon_service = _build_recon_service(use_hibp=use_hibp)
@@ -177,28 +194,29 @@ def analyze(
     try:
         result = recon_service.analyze_email(email, progress_callback=_show_progress)
     except ValueError as exc:
-        typer.secho(f"Invalid input: {exc}", fg=typer.colors.RED, err=True)
+        typer.secho(text("cli.invalid_input", error=_error_detail(exc)), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
     except Exception as exc:
-        typer.secho(f"Analysis failed: {exc}", fg=typer.colors.RED, err=True)
+        typer.secho(text("cli.analysis_failed", error=_error_detail(exc)), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(render_summary(result, mask_sensitive=not reveal_emails))
+    typer.echo(render_summary(result, mask_sensitive=not reveal_emails, language=language()))
 
     if json_out is not None:
-        export_path = export_json(result, json_out)
-        typer.secho(f"JSON report saved to: {export_path}", fg=typer.colors.GREEN)
+        export_path = _save_report(export_json, result, json_out, language=language())
+        typer.secho(text("cli.json_saved", path=export_path), fg=typer.colors.GREEN)
 
     if md_out is not None:
-        export_path = export_markdown(
-            result,
+        export_path = _save_report(
+            export_markdown, result,
             md_out,
             mask_sensitive=not reveal_emails,
+            language=resolve_markdown_language(markdown_language),
         )
-        typer.secho(f"Markdown report saved to: {export_path}", fg=typer.colors.GREEN)
+        typer.secho(text("cli.markdown_saved", path=export_path), fg=typer.colors.GREEN)
 
 
-@app.command("investigate")
+@app.command("investigate", cls=LocalizedCommand)
 def investigate(
     name: list[str] | None = typer.Option(
         None,
@@ -250,8 +268,8 @@ def investigate(
         "--md-out",
         help="Write the investigation report as Markdown.",
     ),
-    markdown_language: str = typer.Option(
-        "en",
+    markdown_language: Language | None = typer.Option(
+        None,
         "--markdown-language",
         help="Markdown report language: en or pt-br.",
     ),
@@ -288,7 +306,7 @@ def investigate(
     )
 
 
-@app.command("interactive")
+@app.command("interactive", cls=LocalizedCommand)
 def interactive(
     json_out: Path | None = typer.Option(
         None,
@@ -300,8 +318,8 @@ def interactive(
         "--md-out",
         help="Write the investigation report as Markdown.",
     ),
-    markdown_language: str = typer.Option(
-        "en",
+    markdown_language: Language | None = typer.Option(
+        None,
         "--markdown-language",
         help="Markdown report language: en or pt-br.",
     ),
@@ -317,16 +335,16 @@ def interactive(
     ),
 ) -> None:
     """Guide an investigation step by step with interactive prompts."""
-    typer.secho("MailRecon interactive investigation", fg=typer.colors.CYAN)
-    typer.echo("Press Enter to skip any optional field.")
+    typer.secho(text("cli.interactive_title"), fg=typer.colors.CYAN)
+    typer.echo(text("cli.skip"))
 
-    names = _prompt_list("Name")
-    emails = _prompt_list("Email")
-    usernames = _prompt_list("Username")
-    domains = _prompt_list("Domain")
-    organizations = _prompt_list("Organization")
-    contexts = _prompt_list("Context")
-    candidate_emails = _prompt_list("Candidate email")
+    names = _prompt_list("cli.name")
+    emails = _prompt_list("cli.email")
+    usernames = _prompt_list("cli.username")
+    domains = _prompt_list("cli.domain")
+    organizations = _prompt_list("cli.organization")
+    contexts = _prompt_list("cli.context")
+    candidate_emails = _prompt_list("cli.candidate_email")
 
     query = InvestigationInput(
         names=names,
@@ -342,34 +360,34 @@ def interactive(
     chosen_md_out = md_out
     chosen_markdown_language = markdown_language
 
-    if chosen_json_out is None and typer.confirm("Save the investigation as JSON?", default=False):
+    if chosen_json_out is None and confirm("cli.save_json", default=False):
         chosen_json_out = Path(
             typer.prompt(
-                "JSON output path",
+                text("cli.json_path"),
                 default="reports/investigation.json",
                 show_default=True,
             )
         )
 
-    if chosen_md_out is None and typer.confirm("Save the investigation as Markdown?", default=True):
+    if chosen_md_out is None and confirm("cli.save_markdown", default=True):
         chosen_md_out = Path(
             typer.prompt(
-                "Markdown output path",
+                text("cli.markdown_path"),
                 default="reports/investigation.md",
                 show_default=True,
             )
         )
-        chosen_markdown_language = typer.prompt(
-            "Markdown language (en or pt-br)",
-            default=markdown_language,
+        chosen_markdown_language = resolve_markdown_language(typer.prompt(
+            text("cli.markdown_prompt"),
+            default=resolve_markdown_language(markdown_language),
             show_default=True,
-        )
+        ))
 
     _run_investigation(
         query=query,
         use_hibp=use_hibp,
-        check_public_profiles=typer.confirm(
-            "Resolve generated public profile URLs with safe public-only checks?",
+        check_public_profiles=confirm(
+            "cli.check_profiles",
             default=False,
         ),
         lab_profile_scenario=None,
@@ -380,7 +398,7 @@ def interactive(
     )
 
 
-@app.command("lab-admin")
+@app.command("lab-admin", cls=LocalizedCommand)
 def lab_admin(
     handle: str = typer.Option(..., "--handle", help="Username or handle seed."),
     domain: str = typer.Option("", "--domain", help="Optional domain seed."),
@@ -400,8 +418,8 @@ def lab_admin(
         "--md-out",
         help="Write the investigation report as Markdown.",
     ),
-    markdown_language: str = typer.Option(
-        "en",
+    markdown_language: Language | None = typer.Option(
+        None,
         "--markdown-language",
         help="Markdown report language: en or pt-br.",
     ),
@@ -421,7 +439,7 @@ def lab_admin(
         usernames=[handle],
         domains=[domain] if domain else [],
         emails=[email] if email else [],
-        contexts=["lab-only public profile simulation"],
+        contexts=[msg("cli.lab_context")],
     )
     _run_investigation(
         query=query,
@@ -435,7 +453,7 @@ def lab_admin(
     )
 
 
-@app.command("lab-smtp-validate")
+@app.command("lab-smtp-validate", cls=LocalizedCommand)
 def lab_smtp_validate(
     email: str = typer.Argument(..., help="Lab email address to validate."),
     lab_domain: str = typer.Option(
@@ -492,6 +510,9 @@ def lab_smtp_validate(
         "--md-out",
         help="Write the lab SMTP result as Markdown.",
     ),
+    markdown_language: Language | None = typer.Option(
+        None, "--markdown-language", help="Markdown report language: en or pt-br.",
+    ),
 ) -> None:
     """Run lab-only SMTP validation with strict safety gates.
 
@@ -515,27 +536,27 @@ def lab_smtp_validate(
             max_probes=max_probes,
         )
     except ValueError as exc:
-        typer.secho(f"Invalid lab SMTP input: {exc}", fg=typer.colors.RED, err=True)
+        typer.secho(text("cli.invalid_smtp", error=_error_detail(exc)), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
     except Exception as exc:
-        typer.secho(f"Lab SMTP validation failed: {exc}", fg=typer.colors.RED, err=True)
+        typer.secho(text("cli.smtp_failed", error=_error_detail(exc)), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(render_smtp_lab_summary(result))
+    typer.echo(render_smtp_lab_summary(result, language=language()))
 
     if json_out is not None:
-        export_path = export_json(result, json_out)
-        typer.secho(f"JSON report saved to: {export_path}", fg=typer.colors.GREEN)
+        export_path = _save_report(export_json, result, json_out, language=language())
+        typer.secho(text("cli.json_saved", path=export_path), fg=typer.colors.GREEN)
 
     if md_out is not None:
-        export_path = export_smtp_lab_markdown(result, md_out)
-        typer.secho(f"Markdown report saved to: {export_path}", fg=typer.colors.GREEN)
+        export_path = _save_report(export_smtp_lab_markdown, result, md_out, language=resolve_markdown_language(markdown_language))
+        typer.secho(text("cli.markdown_saved", path=export_path), fg=typer.colors.GREEN)
 
     if not result.safety_decision.allowed:
         raise typer.Exit(code=2)
 
 
-@app.command("rerun-last")
+@app.command("rerun-last", cls=LocalizedCommand)
 def rerun_last(
     json_out: Path | None = typer.Option(
         None,
@@ -547,8 +568,8 @@ def rerun_last(
         "--md-out",
         help="Write the investigation report as Markdown.",
     ),
-    markdown_language: str = typer.Option(
-        "en",
+    markdown_language: Language | None = typer.Option(
+        None,
         "--markdown-language",
         help="Markdown report language: en or pt-br.",
     ),
@@ -564,10 +585,10 @@ def rerun_last(
     try:
         query, run_options = refinement_state_service.load_last_investigation()
     except ValueError as exc:
-        typer.secho(f"Unable to rerun the last investigation: {exc}", fg=typer.colors.RED, err=True)
+        typer.secho(text("cli.rerun_failed", error=_error_detail(exc)), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.secho("Reloading the latest saved investigation parameters...", fg=typer.colors.CYAN)
+    typer.secho(text("cli.reload"), fg=typer.colors.CYAN)
     _run_investigation(
         query=query,
         use_hibp=bool(run_options.get("use_hibp", True)),
@@ -582,13 +603,14 @@ def rerun_last(
 
 def _prompt_list(label: str) -> list[str]:
     """Prompt the user for a comma-separated list."""
-    raw_value = typer.prompt(f"{label}(s)", default="", show_default=False)
+    raw_value = typer.prompt(text("cli.list_prompt", label=text(label)), default="", show_default=False)
     return [item.strip() for item in raw_value.split(",") if item.strip()]
 
 
 def _show_progress(message: str) -> None:
     """Show a simple progress marker so the terminal does not look stuck."""
-    typer.secho(f"[...] {message}", fg=typer.colors.BLUE)
+    rendered = translate(message, language=language())
+    typer.secho(f"[...] {_mask_for_display(rendered)}", fg=typer.colors.BLUE)
 
 
 def _coerce_optional_string(value: object) -> str | None:
@@ -596,3 +618,26 @@ def _coerce_optional_string(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value
     return None
+
+
+def _error_detail(error: Exception) -> str:
+    """Keep authored message metadata when an exception wraps it."""
+    detail = error.args[0] if len(error.args) == 1 and isinstance(error.args[0], str) else str(error)
+    return _mask_for_display(translate(detail, language=language()))
+
+
+def _mask_for_display(value: str) -> str:
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and ctx.params.get("reveal_emails", False):
+        return value
+    return _mask_text(value)
+
+
+def _save_report(exporter, result, output: Path, **options) -> Path:
+    """Report filesystem failures without rerunning the investigation."""
+    try:
+        return exporter(result, output, **options)
+    except (OSError, ValueError) as exc:
+        message = text("cli.export_failed", path=output, error=_error_detail(exc))
+        typer.secho(_mask_for_display(message), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc

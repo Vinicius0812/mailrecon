@@ -55,6 +55,7 @@ class FakeInvestigationService:
                     source="seed_email",
                     confidence="high",
                     confidence_score=90,
+                    review_priority_score=90,
                     status="valid",
                 )
             ],
@@ -67,6 +68,7 @@ class FakeInvestigationService:
                     source="public_profile_pivot",
                     confidence="low",
                     confidence_score=50,
+                    review_priority_score=50,
                     status="manual_review",
                     resolution_status="public_match_possible",
                     http_status_code=200,
@@ -93,6 +95,7 @@ class FakeInvestigationService:
             pivot_suggestions=["Review naming patterns."],
             limitations=["Results are OSINT indicators."],
             overall_confidence_score=73,
+            review_priority_score=73,
         )
 
 
@@ -129,8 +132,8 @@ def test_cli_shows_help_without_args() -> None:
     result = runner.invoke(app)
 
     assert result.exit_code == 0
-    assert "Educational CLI for email recon and validation." in result.stdout
-    assert "Commands" in result.stdout
+    assert "CLI educacional para reconhecimento e validação de e-mails." in result.stdout
+    assert "Comandos" in result.stdout
     assert "analyze" in result.stdout
     assert "investigate" in result.stdout
     assert "interactive" in result.stdout
@@ -143,7 +146,7 @@ def test_cli_analyze_renders_summary(monkeypatch) -> None:
         lambda use_hibp: FakeReconService(),
     )
 
-    result = runner.invoke(app, ["analyze", "user@example.com", "--no-hibp"])
+    result = runner.invoke(app, ["--language", "en", "analyze", "user@example.com", "--no-hibp"])
 
     assert result.exit_code == 0
     assert "[...] Checking DNS and MX records for example.com..." in result.stdout
@@ -163,7 +166,7 @@ def test_cli_analyze_can_reveal_email(monkeypatch) -> None:
 
     result = runner.invoke(
         app,
-        ["analyze", "user@example.com", "--no-hibp", "--reveal-emails"],
+        ["--language", "en","analyze", "user@example.com", "--no-hibp", "--reveal-emails"],
     )
 
     assert result.exit_code == 0
@@ -182,7 +185,7 @@ def test_cli_analyze_handles_invalid_input(monkeypatch) -> None:
         lambda use_hibp: ErrorReconService(),
     )
 
-    result = runner.invoke(app, ["analyze", "not-an-email"])
+    result = runner.invoke(app, ["--language", "en", "analyze", "not-an-email"])
 
     assert result.exit_code == 1
     assert "Invalid input:" in result.stderr
@@ -201,7 +204,7 @@ def test_cli_investigate_renders_summary(monkeypatch) -> None:
 
     result = runner.invoke(
         app,
-        [
+        ["--language", "en",
             "investigate",
             "--email",
             "user@example.com",
@@ -238,7 +241,7 @@ def test_cli_investigate_can_reveal_emails(monkeypatch) -> None:
 
     result = runner.invoke(
         app,
-        [
+        ["--language", "en",
             "investigate",
             "--email",
             "user@example.com",
@@ -279,7 +282,7 @@ def test_cli_interactive_collects_inputs(monkeypatch) -> None:
         ]
     ) + "\n"
 
-    result = runner.invoke(app, ["interactive", "--no-hibp"], input=answers)
+    result = runner.invoke(app, ["--language", "en", "interactive", "--no-hibp"], input=answers)
 
     assert result.exit_code == 0
     assert "MailRecon interactive investigation" in result.stdout
@@ -317,7 +320,7 @@ def test_cli_interactive_can_choose_exports(monkeypatch, tmp_path) -> None:
         ]
     ) + "\n"
 
-    result = runner.invoke(app, ["interactive", "--no-hibp"], input=answers)
+    result = runner.invoke(app, ["--language", "en", "interactive", "--no-hibp"], input=answers)
 
     assert result.exit_code == 0
     assert f"JSON report saved to: {json_path}" in result.stdout
@@ -339,7 +342,7 @@ def test_cli_lab_admin_runs_simulation(monkeypatch) -> None:
 
     result = runner.invoke(
         app,
-        [
+        ["--language", "en",
             "lab-admin",
             "--handle",
             "user",
@@ -363,7 +366,7 @@ def test_cli_rerun_last_reuses_saved_parameters(monkeypatch) -> None:
         lambda: FakeRefinementStateService(),
     )
 
-    result = runner.invoke(app, ["rerun-last"])
+    result = runner.invoke(app, ["--language", "en", "rerun-last"])
 
     assert result.exit_code == 0
     assert "Reloading the latest saved investigation parameters..." in result.stdout
@@ -388,7 +391,7 @@ def test_cli_investigate_handles_invalid_input(monkeypatch) -> None:
         lambda use_hibp: ErrorInvestigationService(),
     )
 
-    result = runner.invoke(app, ["investigate"])
+    result = runner.invoke(app, ["--language", "en", "investigate"])
 
     assert result.exit_code == 1
     assert "Invalid investigation input:" in result.stderr
@@ -400,7 +403,7 @@ def test_cli_lab_smtp_validate_mock_exports_json(tmp_path) -> None:
 
     result = runner.invoke(
         app,
-        [
+        ["--language", "en",
             "lab-smtp-validate",
             "user@lab.local",
             "--lab-domain",
@@ -426,7 +429,7 @@ def test_cli_lab_smtp_validate_blocks_network_without_env_gate() -> None:
 
     result = runner.invoke(
         app,
-        [
+        ["--language", "en",
             "lab-smtp-validate",
             "user@lab.local",
             "--lab-domain",

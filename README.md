@@ -1,523 +1,171 @@
 # MailRecon
 
-MailRecon is an educational Python CLI for email recon and validation using public sources, permitted integrations, and study-friendly workflows.
+[Versão em inglês](READMEeng.md)
 
-MailRecon é uma CLI educacional em Python para recon e validação de e-mails usando fontes públicas, integrações permitidas e um fluxo amigável para estudo.
+CLI em Python para OSINT ético, validação técnica de e-mails e investigação defensiva autorizada. Organiza entradas, hipóteses e evidências públicas para revisão humana. Não confirma a identidade de uma pessoa nem a existência de uma caixa postal individual.
 
-The project is intentionally small, ethical, and suitable for a beginner cybersecurity portfolio. Its main goal is to help study Python CLI architecture, modular design, API integrations, error handling, reporting, and tests without becoming a large framework.
+## Escopo
 
-O projeto é intencionalmente pequeno, ético e adequado para portfólio de cibersegurança em nível iniciante. O objetivo principal é estudar arquitetura de CLI em Python, organização modular, integrações com API, tratamento de erros, relatórios e testes sem virar um framework grande.
+Projeto de portfólio para estudantes de segurança, analistas defensivos e investigadores com autorização. Usa validação de formato, DNS público e, opcionalmente, a API documentada do Have I Been Pwned (HIBP). Pode verificar páginas públicas já sugeridas, sem login.
 
-## Goals | Objetivos
+Não automatiza login, recuperação de conta, testes de credenciais, enumeração abusiva ou coleta de dados privados. SMTP é isolado em laboratório, sem descoberta por MX e fora do fluxo normal. Use apenas dados próprios, fictícios ou de um escopo expressamente autorizado.
 
-- Validate an email address | Validar um endereço de e-mail
-- Extract and inspect the domain | Extrair e inspecionar o domínio
-- Query DNS, MX, SPF, DMARC, and provider-family signals | Consultar sinais de DNS, MX, SPF, DMARC e família de provedor
-- Optionally query Have I Been Pwned | Consultar opcionalmente o Have I Been Pwned
-- Start reusable OSINT investigations from multiple seed types | Iniciar investigações OSINT reutilizáveis a partir de vários tipos de semente
-- Score review priority and explain evidence limitations | Gerar prioridade de revisão e explicar limitações das evidências
-- Show a friendly terminal summary | Mostrar um resumo amigável no terminal
-- Export reports as JSON and Markdown | Exportar relatórios em JSON e Markdown
+## Funcionalidades
 
-## Ethical Scope | Escopo Ético
+- `analyze`: formato, DNS (A, AAAA, MX, NS, TXT), SPF, DMARC, família de provedor e HIBP opcional.
+- `investigate`: entradas por nome, e-mail, usuário, domínio, organização, contexto e candidatos explícitos; proveniência, motivos e limitações.
+- `interactive`: perguntas guiadas e escolha de exportações.
+- `rerun-last`: reutiliza a investigação salva e suas exclusões manuais.
+- `lab-admin`: simula estados de perfis sem acessar as plataformas.
+- `lab-smtp-validate`: simulação SMTP ou checagens limitadas em laboratório configurado.
+- JSON e Markdown; pt-BR padrão e inglês opcional; mascaramento nas saídas humanas da análise/investigação.
 
-MailRecon is designed for:
+## Instalação
 
-MailRecon foi pensado para:
+Requisitos: Python 3.11+, Git e rede para instalar dependências. HIBP é opcional e requer chave com acesso à API.
 
-- educational environments | ambientes educacionais
-- authorized labs | laboratórios autorizados
-- portfolio projects | projetos de portfólio
-- validation against public sources and documented APIs | validação com fontes públicas e APIs documentadas
-
-It does not aim to perform intrusive validation, SMTP abuse, or unauthorized enumeration.
-
-Ele não tem como objetivo realizar validação intrusiva, abuso de SMTP ou enumeração não autorizada.
-
-## Why This Project | Por Que Este Projeto
-
-This project was created as a beginner-friendly cybersecurity portfolio piece focused on ethical recon, defensive curiosity, and public-source validation. It aims to be small enough to finish, clear enough to study, and structured enough to grow over time.
-
-Este projeto foi criado como uma peça de portfólio de cibersegurança em nível iniciante, com foco em recon ético, curiosidade defensiva e validação com fontes públicas. A proposta é ser pequeno o bastante para ser concluído, claro o bastante para estudo e organizado o bastante para evoluir com o tempo.
-
-## Stack
-
-- Python 3.11+
-- Typer for the CLI | Typer para a CLI
-- httpx for HTTP calls | httpx para chamadas HTTP
-- email-validator for email validation | email-validator para validação de e-mail
-- dnspython for DNS, MX, SPF, DMARC, and provider lookups | dnspython para consultas DNS, MX, SPF, DMARC e provedor
-- python-dotenv for environment configuration | python-dotenv para configuração por ambiente
-- pytest for basic tests | pytest para testes básicos
-
-## Project Structure | Estrutura do Projeto
-
-```text
-mailrecon/
-├── .env.example
-├── .gitignore
-├── README.md
-├── pyproject.toml
-├── src/
-│   └── mailrecon/
-│       ├── __init__.py
-│       ├── main.py
-│       ├── cli/
-│       │   ├── __init__.py
-│       │   └── app.py
-│       ├── core/
-│       │   ├── __init__.py
-│       │   ├── config.py
-│       │   ├── models.py
-│       │   └── validators.py
-│       ├── services/
-│       │   ├── __init__.py
-│       │   ├── dns_service.py
-│       │   ├── hibp_service.py
-│       │   └── recon_service.py
-│       └── reporting/
-│           ├── __init__.py
-│           ├── console.py
-│           └── exporters.py
-└── tests/
-    ├── __init__.py
-    ├── test_cli.py
-    ├── test_dns_service.py
-    ├── test_exporters.py
-    ├── test_hibp_service.py
-    └── test_validators.py
-```
-
-## MVP Scope | Escopo do MVP
-
-The first version focuses on a single command:
-
-A primeira versão foca em um único comando:
-
-```bash
-mailrecon analyze user@example.com
-```
-
-Features included in the MVP:
-
-Funcionalidades incluídas no MVP:
-
-- email format validation | validação de formato de e-mail
-- domain extraction | extração de domínio
-- DNS and MX lookup | consulta DNS e MX
-- domain resolution check | verificação se o domínio resolve
-- HIBP integration prepared through environment variables | integração com HIBP preparada via variáveis de ambiente
-- JSON and Markdown export | exportação em JSON e Markdown
-- reusable OSINT investigation workflow with structured evidence | fluxo reutilizável de investigação OSINT com evidências estruturadas
-- reusable confidence scoring for candidates, pivots, and evidence | score reutilizável de confiança para candidatos, pivôs e evidências
-- friendly terminal output | saída amigável no terminal
-- basic tests | testes básicos
-
-## Roadmap | Roadmap
-
-### MVP
-
-- end-to-end `analyze` command | comando `analyze` de ponta a ponta
-- JSON and Markdown reporting | relatórios em JSON e Markdown
-- tests and documentation | testes e documentação
-
-### v1.1
-
-- better terminal output | saída melhor no terminal
-- stronger error handling | tratamento de erros mais robusto
-- configurable behavior and richer docs | comportamento configurável e documentação mais rica
-
-### v1.2
-
-- optional interactive mode | modo interativo opcional
-- batch processing | processamento em lote
-- more DNS-focused enrichment | enriquecimento adicional focado em DNS
-
-## Learning Outcomes | Aprendizados
-
-This project is meant to support hands-on learning in:
-
-Este projeto foi pensado para apoiar aprendizado prático em:
-
-- Python CLI design | design de CLI em Python
-- modular project structure | estrutura modular de projeto
-- external API integration | integração com APIs externas
-- environment-based configuration | configuração por variáveis de ambiente
-- resilient error handling | tratamento resiliente de erros
-- JSON and Markdown reporting | geração de relatórios em JSON e Markdown
-- basic automated tests | testes automatizados básicos
-
-## Prerequisites | Pré-requisitos
-
-You need the following programs installed before running the project.
-
-Você precisa dos programas abaixo instalados antes de executar o projeto.
-
-### Windows
-
-- Python 3.11 or newer | Python 3.11 ou mais recente
-- `pip` for Python package installation | `pip` para instalação de pacotes Python
-- PowerShell or Windows Terminal | PowerShell ou Windows Terminal
-- Git
-
-Recommended checks:
-
-Comandos recomendados para verificar:
-
-```powershell
-python --version
-pip --version
-git --version
-```
-
-If `python` is not available, try:
-
-Se `python` não estiver disponível, tente:
-
-```powershell
-py --version
-```
-
-### Linux
-
-- Python 3.11 or newer | Python 3.11 ou mais recente
-- `pip`
-- `venv` support for virtual environments | suporte a `venv` para ambientes virtuais
-- Git
-
-Recommended checks:
-
-Comandos recomendados para verificar:
-
-```bash
-python3 --version
-pip3 --version
-git --version
-```
-
-On Debian, Ubuntu, or Kali, you usually need:
-
-Em Debian, Ubuntu ou Kali, normalmente você vai precisar de:
-
-```bash
-sudo apt update
-sudo apt install -y python3 python3-pip python3-venv git
-```
-
-## Installation | Instalação
-
-Before running the installation commands, clone the repository and enter the project folder.
-
-Antes de executar os comandos de instalação, clone o repositório e entre na pasta do projeto.
-
-### Windows
+### Windows / PowerShell
 
 ```powershell
 git clone https://github.com/Vinicius0812/mailrecon.git
 cd mailrecon
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e .[dev]
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+Copy-Item .env.example .env
+.\.venv\Scripts\mailrecon.exe --help
+.\.venv\Scripts\mailrecon.exe analyze pessoa@example.com --no-hibp
 ```
 
-If your system uses the Python launcher:
-
-Se o seu sistema usa o Python Launcher:
+Não é necessário ativar o ambiente. Para habilitar HIBP na sessão:
 
 ```powershell
-git clone https://github.com/Vinicius0812/mailrecon.git
-cd mailrecon
-py -3.11 -m venv .venv
-.venv\Scripts\activate
-pip install -e .[dev]
+$env:HIBP_API_KEY = "SUA_CHAVE"
+.\.venv\Scripts\mailrecon.exe analyze pessoa@example.com
 ```
 
-### Linux
+### Linux / shell
 
 ```bash
 git clone https://github.com/Vinicius0812/mailrecon.git
 cd mailrecon
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+python -m pip install -e '.[dev]'
+cp .env.example .env
+mailrecon --help
+mailrecon analyze pessoa@example.com --no-hibp
+export HIBP_API_KEY='SUA_CHAVE'
 ```
 
-### What These Commands Do | O Que Esses Comandos Fazem
+Os endereços em `example.com` são fictícios; seu DNS real não representa um laboratório de caixas postais.
 
-- `git clone https://github.com/Vinicius0812/mailrecon.git`: downloads the repository | baixa o repositório
-- `cd mailrecon`: enters the project folder | entra na pasta do projeto
-- creates the virtual environment | cria o ambiente virtual
-- activates the virtual environment | ativa o ambiente virtual
-- installs the project and development dependencies | instala o projeto e as dependências de desenvolvimento
+## Idiomas e comandos
 
-## Usage | Uso
+`--language pt-br|en` é global: coloque **antes do subcomando**. Comandos, flags, chaves JSON e valores técnicos como `low`, `medium` e estados permanecem em inglês. Rótulos e níveis de confiança nas saídas humanas são traduzidos.
 
-Run the main analysis command:
-
-Execute o comando principal de análise:
+Os exemplos abaixo pressupõem ambiente ativado. No PowerShell sem ativação, use o caminho do executável mostrado acima.
 
 ```bash
-mailrecon analyze user@example.com
+mailrecon --language pt-br analyze pessoa@example.com --no-hibp
+mailrecon --language en investigate --email pessoa@example.com --username pessoa --domain example.com --no-hibp
+mailrecon investigate --name "Pessoa Exemplo" --email pessoa@example.com --candidate-email pessoa@example.com --domain example.com --no-hibp --json-out reports/investigacao.json --md-out reports/investigacao.md
+mailrecon --language pt-br analyze pessoa@example.com --no-hibp --md-out reports/analysis-en.md --markdown-language en
+mailrecon interactive --no-hibp
+mailrecon --language en rerun-last
 ```
 
-Run a structured OSINT investigation:
+O Markdown herda o idioma do terminal. `--markdown-language pt-br|en` altera apenas o relatório e está disponível em todos os comandos com exportação Markdown. No interativo em português, use `s`/`sim` ou `n`/`não`/`nao`; em inglês, `y`/`yes` ou `n`/`no`. Enter aplica o padrão anunciado.
 
-Execute uma investigação OSINT estruturada:
+`rerun-last` reutiliza as opções salvas, inclusive HIBP; não aceita uma nova flag `--no-hibp`. `--check-public-profiles` faz checagens HTTP públicas opcionais. Bloqueio, login, limite de requisições ou erro não provam ausência de uma conta.
+
+## Confiança e proveniência
+
+A deduplicação mantém a origem principal em `source`, nesta ordem:
+
+1. `seed_email`: e-mail informado diretamente.
+2. `provided_candidate`: candidato informado explicitamente.
+3. `username_domain_inference`: hipótese por usuário e domínio.
+4. `name_domain_inference`: hipótese por nome e domínio.
+
+`sources` preserva todas as origens. Uma inferência não substitui a entrada direta.
+
+`confidence_scope` identifica a afirmação avaliada. Entrada direta ou explícita tem confiança `medium` (média) na informação fornecida; inferências têm `low` (baixa) na hipótese. Formato inválido, NXDOMAIN e Null MX recebem baixa. DNS não eleva confiança de identidade.
+
+Página alcançável tem confiança média apenas no alcance HTTP, não na titularidade ou correspondência com o e-mail. Não verificado, ambíguo, bloqueado, ausente ou com erro ficam com baixa. Simulações têm escopo sintético e não observam uma plataforma real.
+
+HIBP tem confiança média no registro de exposição apenas em `breaches_found`. Consulta desabilitada, chave ausente, negativa ou falha recebem baixa. Ausência de vazamentos conhecidos não prova segurança, inatividade ou inexistência.
+
+`review_priority_score` é uma **heurística de triagem**, não probabilidade ou percentual de acerto. Zero permanece zero; pontuações antigas não substituem esse campo. Tetos conservadores: direto 70, explícito 60, inferência por usuário 45 e por nome 30; conta funcional 35, domínio descartável 25, perfil alcançável 45 (sem aumento automático da pontuação inicial). Penalidades reduzem a prioridade em investigações ruidosas.
+
+O detalhamento usa regras independentes para formato validado, observação DNS e checagens de perfil realmente realizadas. Correlação de identidade permanece zero sem evidência independente. Dados pessoais informados, DNS e padrões de URL não confirmam identidade. As pontuações não têm calibração estatística.
+
+## Refinamento e privacidade
+
+O estado fica em `.mailrecon-temp/last-investigation-refinement.json`. Adicione URLs refutadas manualmente a `excluded_profile_urls` e rode `mailrecon rerun-last`. Estados antigos continuam legíveis; a nova execução aplica o idioma selecionado.
+
+**JSON e estado de refinamento contêm dados completos**, inclusive e-mails, nomes, contextos e URLs. Mascaramento não anonimiza esses arquivos. Não publique relatórios reais, chaves ou estados locais. Restrinja acesso e retenção conforme o escopo autorizado. `--reveal-emails` revela e-mails na análise/investigação; saídas humanas de SMTP também são mascaradas, mas seu JSON mantém o endereço informado.
+
+Mensagens do projeto conservam chave e parâmetros em metadados opcionais `localization` no JSON. O mesmo resultado pode ser renderizado em outro idioma sem novas consultas. Entradas, URLs, respostas externas e identificadores técnicos são preservados.
+
+## Laboratórios
+
+Perfil sintético sem acesso às plataformas:
 
 ```bash
-mailrecon investigate --email user@example.com --domain example.com --context "vendor review" --no-hibp
+mailrecon lab-admin --handle usuario_ficticio --scenario found --md-out reports/lab.md
+mailrecon lab-admin --handle usuario_ficticio --scenario blocked
 ```
 
-Add safe public-profile resolution checks:
+Não forneça domínio ou e-mail se quiser evitar também coleta DNS. Cenários: `found`, `not-found`, `ambiguous`, `blocked`, `rate-limited`.
 
-Adicione checagens seguras de perfis públicos:
+SMTP sem rede:
 
 ```bash
-mailrecon investigate --username asmith --domain example.com --check-public-profiles
+mailrecon lab-smtp-validate pessoa@lab.local --lab-domain lab.local --transport mock --no-network --check vrfy --md-out reports/smtp.md
 ```
 
-Seed an investigation from multiple inputs:
+Rede SMTP exige `MAILRECON_ENABLE_LAB_SMTP=1`, `--confirm-lab-only`, host e domínio explícitos compatíveis e transporte `localhost` ou `private-lab`. Padrão: `mock`, até três sondagens (`vrfy`, `rcpt`, `expn`). Não use serviços públicos ou alvos sem autorização. Respostas não provam existência ou controle de caixas postais reais.
 
-Inicie uma investigação a partir de múltiplas entradas:
+## Configuração
+
+Veja [.env.example](.env.example).
+
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `HIBP_API_KEY` | vazio | HIBP opcional |
+| `MAILRECON_HTTP_TIMEOUT` | `10.0` | Limite HTTP, em segundos |
+| `MAILRECON_DNS_TIMEOUT` | `5.0` | Limite DNS, em segundos |
+| `MAILRECON_ENABLE_LAB_SMTP` | `0` | Habilitação de SMTP com rede |
+| `MAILRECON_LAB_SMTP_ALLOW_HOSTS` | vazio | Hosts permitidos do laboratório |
+| `MAILRECON_LAB_SMTP_TIMEOUT` | `3.0` | Limite SMTP, em segundos |
+
+## Arquitetura e testes
+
+```text
+src/mailrecon/
+  cli/          comandos, perguntas e seleção de idioma
+  core/         modelos, catálogos, validação, configuração e segurança
+  services/     investigação, DNS, HIBP, perfis, refinamento e SMTP de laboratório
+  reporting/    terminal e exportação JSON/Markdown
+tests/          testes isolados, respostas simuladas e regressões
+```
+
+PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check
+```
+
+Linux:
 
 ```bash
-mailrecon investigate \
-  --name "Alice Smith" \
-  --username asmith \
-  --domain example.com \
-  --organization "Example Org" \
-  --context "Initial OSINT triage"
+python -m pytest -q
+git diff --check
 ```
 
-The investigation flow also generates safe public-profile pivots for manual review on platforms such as LinkedIn, Instagram, Facebook, GitHub, X, Spotify, Telegram, and Gravatar.
+Os testes usam simulações, sem consultar pessoas ou serviços reais. Cobrem proveniência, DNS/HTTP, confiança, pontuações, idiomas, mascaramento, exportação, refinamento e controles SMTP. Não substituem validação autorizada de integração nem demonstram acurácia estatística.
 
-O fluxo de investigação também gera pivôs seguros de perfis públicos para revisão manual em plataformas como LinkedIn, Instagram, Facebook, GitHub, X, Spotify, Telegram e Gravatar.
+## Próximos passos
 
-The terminal summary also highlights the most trusted platform links generated during the investigation to speed up manual review.
-
-O resumo no terminal também destaca os links de plataforma com maior confiança gerados durante a investigação para acelerar a revisão manual.
-
-MailRecon also writes a temporary refinement file for the latest investigation at `.mailrecon-temp/last-investigation-refinement.json`. Add disproved profile links to `excluded_profile_urls` and rerun the same investigation to hide those links from the visible profile sections.
-
-O MailRecon também grava um arquivo temporário de refinamento para a última investigação em `.mailrecon-temp/last-investigation-refinement.json`. Adicione links de perfil que já foram descartados em `excluded_profile_urls` e execute novamente a mesma investigação para ocultar esses links das seções visíveis de perfis.
-
-That temporary file also stores the latest investigation parameters, so you can reuse them with a single command.
-
-Esse arquivo temporário também guarda os parâmetros da última investigação, para que você possa reutilizá-los com um único comando.
-
-Export reports when needed:
-
-Exporte relatórios quando precisar:
-
-```bash
-mailrecon analyze user@example.com --json-out reports/result.json --md-out reports/result.md
-```
-
-Export a structured investigation report:
-
-Exporte um relatório estruturado de investigação:
-
-```bash
-mailrecon investigate --email user@example.com --domain example.com --json-out reports/investigation.json --md-out reports/investigation.md
-```
-
-Human-readable `analyze` and `investigate` output masks email addresses by default. Reveal full email addresses in the terminal summary and Markdown report only when needed:
-
-Mostre e-mails completos no resumo do terminal e no relatório Markdown quando necessário:
-
-```bash
-mailrecon analyze user@example.com --md-out reports/result.md --reveal-emails
-mailrecon investigate --email user@example.com --domain example.com --md-out reports/investigation.md --reveal-emails
-```
-
-Generate the Markdown report in Brazilian Portuguese:
-
-Gere o relatório Markdown em português do Brasil:
-
-```bash
-mailrecon investigate --email user@example.com --domain example.com --md-out reports/investigation-ptbr.md --markdown-language pt-br
-```
-
-Run the interactive mode:
-
-Execute o modo interativo:
-
-```bash
-mailrecon interactive --md-out reports/investigation.md
-```
-
-Interactive mode can also ask whether you want to save the result as `.json` and `.md`, including the output paths.
-
-O modo interativo também pode perguntar se você deseja salvar o resultado em `.json` e `.md`, incluindo os caminhos dos arquivos.
-
-During longer runs, the CLI now prints progress messages such as candidate analysis, DNS collection, and public-profile checks so the terminal does not look stuck.
-
-Durante execuções mais longas, a CLI agora mostra mensagens de progresso como análise de candidatos, coleta de DNS e checagens de perfis públicos para que o terminal não pareça travado.
-
-Run the lab-only simulation mode:
-
-Execute o modo de simulação apenas para laboratório:
-
-```bash
-mailrecon lab-admin --handle asmith --scenario found --md-out reports/lab-admin.md
-```
-
-Rerun the latest saved investigation with the current refinement file:
-
-Execute novamente a última investigação salva usando o arquivo de refinamento atual:
-
-```bash
-mailrecon rerun-last
-```
-
-Disable the HIBP request explicitly:
-
-Desabilite a consulta ao HIBP explicitamente:
-
-```bash
-mailrecon analyze user@example.com --no-hibp
-```
-
-## Environment Variables | Variáveis de Ambiente
-
-Copy `.env.example` to `.env` and fill the values you want to use:
-
-Copie `.env.example` para `.env` e preencha os valores que quiser usar:
-
-```env
-HIBP_API_KEY=
-MAILRECON_HTTP_TIMEOUT=10.0
-MAILRECON_DNS_TIMEOUT=5.0
-MAILRECON_ENABLE_LAB_SMTP=0
-MAILRECON_LAB_SMTP_ALLOW_HOSTS=
-MAILRECON_LAB_SMTP_TIMEOUT=3.0
-```
-
-## HIBP API Key | Chave da API do HIBP
-
-You can get the Have I Been Pwned API key from the official dashboard after purchasing a valid subscription:
-
-Você pode obter a chave da API do Have I Been Pwned no painel oficial após contratar uma assinatura válida:
-
-1. Go to `https://haveibeenpwned.com/API/Key`
-2. Sign in with the account used for the subscription
-3. Open the API key area in the dashboard
-4. Copy the key and place it in your `.env`
-
-1. Acesse `https://haveibeenpwned.com/API/Key`
-2. Entre com a conta usada na assinatura
-3. Abra a área da chave de API no painel
-4. Copie a chave e coloque no seu `.env`
-
-Example:
-
-Exemplo:
-
-```env
-HIBP_API_KEY=your_api_key_here
-```
-
-MailRecon also works without the key when you use `--no-hibp`.
-
-O MailRecon também funciona sem a chave quando você usa `--no-hibp`.
-
-## Investigation Notes | Notas de Investigação
-
-MailRecon treats investigation results as OSINT leads, not definitive proof. The investigation workflow records source, reference, collection date, method, confidence, evidence strength, decision reasons, limitations, and observations for each evidence item, while masking sensitive email details in human-readable outputs when practical.
-
-O MailRecon trata resultados de investigação como indícios OSINT, não como prova definitiva. O fluxo de investigação registra fonte, referência, data de coleta, método, confiança, força da evidência, razões de decisão, limitações e observações para cada evidência, além de mascarar detalhes sensíveis de e-mails nas saídas legíveis sempre que possível.
-
-If you need full email addresses in the human-readable investigation output, use `--reveal-emails`. JSON exports already retain the full structured values.
-
-Se você precisar de e-mails completos na saída legível da investigação, use `--reveal-emails`. As exportações JSON já mantêm os valores estruturados completos.
-
-The generated profile pivots are only public navigation or search suggestions for manual review. They do not confirm account ownership and should never be used for login attempts, credential testing, or recovery-flow abuse.
-
-Os pivôs de perfil gerados são apenas sugestões públicas de navegação ou busca para revisão manual. Eles não confirmam propriedade de conta e nunca devem ser usados para tentativa de login, teste de credenciais ou abuso de fluxos de recuperação.
-
-When `--check-public-profiles` is enabled, MailRecon only resolves the already-generated public URLs and records conservative statuses such as `public_match_possible`, `not_found`, `ambiguous`, `blocked_by_platform`, and `rate_limited`.
-
-Quando `--check-public-profiles` está habilitado, o MailRecon apenas resolve as URLs públicas já geradas e registra status conservadores como `public_match_possible`, `not_found`, `ambiguous`, `blocked_by_platform` e `rate_limited`.
-
-Domain checks now enrich public DNS context with A, AAAA, MX, Null MX, TXT, SPF, DMARC, NS, and provider-family signals. These signals describe domain posture and mail capability; they do not confirm that an individual mailbox exists.
-
-As verificações de domínio agora enriquecem o contexto DNS público com sinais de A, AAAA, MX, Null MX, TXT, SPF, DMARC, NS e família de provedor. Esses sinais descrevem postura do domínio e capacidade de e-mail; eles não confirmam que uma caixa postal individual existe.
-
-The refinement file is temporary project state and should not be committed. It exists only to help manually prune wrong public-profile links from the latest matching investigation.
-
-O arquivo de refinamento é um estado temporário do projeto e não deve ser versionado. Ele existe apenas para ajudar a podar manualmente links públicos incorretos da última investigação correspondente.
-
-When you run a different investigation, MailRecon refreshes the temporary file with the new parameters. Old exclusions are only reused when the saved query matches the investigation being rerun.
-
-Quando você executa uma investigação diferente, o MailRecon atualiza o arquivo temporário com os novos parâmetros. Exclusões antigas só são reaproveitadas quando a consulta salva corresponde à investigação que está sendo repetida.
-
-The `lab-admin` command is intentionally simulated. It exists so you can practice classification, reporting, and evidence handling in a controlled academic workflow without probing real authentication or recovery flows.
-
-O comando `lab-admin` é intencionalmente simulado. Ele existe para que você possa praticar classificação, relatório e tratamento de evidências em um fluxo acadêmico controlado, sem tocar em fluxos reais de autenticação ou recuperação.
-
-## Lab SMTP Validation | Validação SMTP de Laboratório
-
-`lab-smtp-validate` is a separated lab-only command for closed demonstrations. It is not part of the normal `analyze` or `investigate` workflow.
-
-`lab-smtp-validate` é um comando separado e exclusivo para demonstrações fechadas de laboratório. Ele não faz parte do fluxo normal de `analyze` ou `investigate`.
-
-Mock mode uses no network:
-
-Modo mock não usa rede:
-
-```bash
-mailrecon lab-smtp-validate user@lab.local --lab-domain lab.local --transport mock --check vrfy
-```
-
-Networked lab checks require all safety gates:
-
-Checagens lab com rede exigem todos os controles de segurança:
-
-- `MAILRECON_ENABLE_LAB_SMTP=1`
-- `--confirm-lab-only`
-- explicit `--host`, never automatic MX discovery
-- email domain matching `--lab-domain`
-- loopback/private/link-local host only
-- at most three requested probes
-
-Example for a local fake SMTP server:
-
-Exemplo para um servidor SMTP fake local:
-
-```bash
-MAILRECON_ENABLE_LAB_SMTP=1 mailrecon lab-smtp-validate user@lab.local --lab-domain lab.local --transport localhost --host 127.0.0.1 --port 2525 --confirm-lab-only --check vrfy
-```
-
-The command never reports “mailbox exists”. It reports only whether the tested lab server accepted or rejected the specific lab interaction.
-
-O comando nunca afirma “a caixa postal existe”. Ele relata apenas se o servidor de laboratório testado aceitou ou rejeitou aquela interação específica de laboratório.
-
-## Review Priority | Prioridade de Revisão
-
-MailRecon now separates factual confidence from review priority. `review_priority_score` helps decide what to inspect first; `confidence`, `evidence_strength`, `decision_reasons`, and `limitations` explain how strong or weak each claim is.
-
-O MailRecon agora separa confiança factual de prioridade de revisão. `review_priority_score` ajuda a decidir o que inspecionar primeiro; `confidence`, `evidence_strength`, `decision_reasons` e `limitations` explicam quão forte ou fraca é cada afirmação.
-
-High-level interpretation:
-
-Interpretação de alto nível:
-
-- `80-100`: high review priority with multiple useful signals | alta prioridade de revisão com múltiplos sinais úteis
-- `50-79`: useful lead, still not proof | lead útil, ainda sem ser prova
-- `1-49`: weak, inferred, ambiguous, or speculative lead | lead fraco, inferido, ambíguo ou especulativo
-- `0`: rejected or no meaningful review signal | rejeitado ou sem sinal relevante de revisão
-
-Generated candidates are capped conservatively. Name/domain inference, username/domain inference, role accounts, disposable domains, HTTP-only profile checks, and HIBP `no_breaches` results are all treated as limited evidence unless independent public signals correlate.
-
-Candidatos gerados recebem tetos conservadores. Inferência por nome/domínio, inferência por username/domínio, contas funcionais, domínios descartáveis, checagens de perfil apenas por HTTP e resultados HIBP `no_breaches` são tratados como evidência limitada até existir correlação com sinais públicos independentes.
-
-## Development Notes | Notas de Desenvolvimento
-
-- Keep the CLI thin | Mantenha a CLI fina
-- Keep integrations inside `services` | Mantenha as integrações em `services`
-- Keep validation and models inside `core` | Mantenha validação e modelos em `core`
-- Keep output logic inside `reporting` | Mantenha a lógica de saída em `reporting`
-
-This separation makes the project easier to study and easier to expand later with new commands or an interactive mode.
-
-Essa separação deixa o projeto mais fácil de estudar e mais fácil de expandir depois com novos comandos ou um modo interativo.
+Para v0.2.0: regressões verdes, instalação validada em Windows/Linux, exemplos sintéticos revisados, limites de privacidade e compatibilidade JSON verificados. Evoluções devem priorizar evidências independentes autorizadas, rastreabilidade e menor ambiguidade, sem ampliar coleta intrusiva.

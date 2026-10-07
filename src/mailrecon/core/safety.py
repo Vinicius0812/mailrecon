@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import ipaddress
 
+from mailrecon.core.i18n import msg
 from mailrecon.core.models import SafetyDecision
 
 
 allowed_smtp_lab_transports = {"mock", "localhost", "private-lab"}
 allowed_smtp_lab_checks = {"vrfy", "rcpt", "expn"}
 default_smtp_lab_limitations = [
-    "Lab SMTP validation is for owned, closed test infrastructure only.",
-    "Results describe the tested lab server interaction and do not prove real mailbox existence.",
-    "MailRecon does not perform MX discovery for lab SMTP validation; the lab host must be supplied explicitly.",
+    msg("safety.limitation.owned_lab"),
+    msg("safety.limitation.mailbox"),
+    msg("safety.limitation.no_mx"),
 ]
 
 
@@ -40,45 +41,45 @@ def evaluate_smtp_lab_safety(
     email_domain = email.rsplit("@", maxsplit=1)[-1].lower() if "@" in email else ""
 
     if normalized_transport not in allowed_smtp_lab_transports:
-        reasons.append(f"Unsupported lab SMTP transport: {transport}.")
+        reasons.append(msg("safety.reason.transport", transport=transport))
 
     unsupported_checks = [
         check for check in normalized_checks if check not in allowed_smtp_lab_checks
     ]
     if unsupported_checks:
-        reasons.append(f"Unsupported lab SMTP check(s): {', '.join(unsupported_checks)}.")
+        reasons.append(msg("safety.reason.checks", checks=', '.join(unsupported_checks)))
 
     if not normalized_checks:
-        reasons.append("At least one lab SMTP check must be requested.")
+        reasons.append(msg("safety.reason.no_checks"))
 
     if max_probes < 1 or max_probes > 3:
-        reasons.append("max_probes must be between 1 and 3.")
+        reasons.append(msg("safety.reason.probe_range"))
 
     if len(normalized_checks) > max_probes:
-        reasons.append("Requested checks exceed max_probes.")
+        reasons.append(msg("safety.reason.probe_limit"))
 
     if not normalized_lab_domain:
-        reasons.append("A lab domain is required.")
+        reasons.append(msg("safety.reason.domain_required"))
     elif email_domain != normalized_lab_domain:
-        reasons.append("Email domain must match the explicit lab domain.")
+        reasons.append(msg("safety.reason.domain_mismatch"))
 
     if no_network and normalized_transport != "mock":
-        reasons.append("--no-network only permits mock transport.")
+        reasons.append(msg("safety.reason.no_network"))
 
     if normalized_transport == "mock":
         return _build_decision(reasons, resolved_ips)
 
     if not enable_lab_smtp:
-        reasons.append("MAILRECON_ENABLE_LAB_SMTP=1 is required for networked lab SMTP.")
+        reasons.append(msg("safety.reason.env_gate"))
 
     if not confirm_lab_only:
-        reasons.append("--confirm-lab-only is required for networked lab SMTP.")
+        reasons.append(msg("safety.reason.confirmation"))
 
     if not normalized_host:
-        reasons.append("A lab host is required for networked lab SMTP.")
+        reasons.append(msg("safety.reason.host_required"))
 
     if normalized_transport == "private-lab" and not allow_hosts:
-        reasons.append("private-lab transport requires explicit allow hosts.")
+        reasons.append(msg("safety.reason.allow_hosts"))
 
     host_ips, host_reasons = _classify_lab_host(
         host=normalized_host,
@@ -89,17 +90,17 @@ def evaluate_smtp_lab_safety(
     reasons.extend(host_reasons)
 
     if port <= 0 or port > 65535:
-        reasons.append("Port must be between 1 and 65535.")
+        reasons.append(msg("safety.reason.port_range"))
 
     if (
         normalized_transport != "localhost"
         and port in {25, 465, 587}
         and not _all_loopback(host_ips)
     ):
-        reasons.append("Common public SMTP ports are blocked outside loopback lab hosts.")
+        reasons.append(msg("safety.reason.public_ports"))
 
     if "expn" in normalized_checks and normalized_transport != "localhost":
-        reasons.append("EXPN is allowed only for mock or localhost lab transport.")
+        reasons.append(msg("safety.reason.expn"))
 
     return _build_decision(reasons, resolved_ips)
 
@@ -120,7 +121,7 @@ def _build_decision(reasons: list[str], resolved_ips: list[str]) -> tuple[Safety
         SafetyDecision(
             allowed=True,
             status="allowed_lab_only",
-            reasons=["All lab-only SMTP safety controls passed."],
+            reasons=[msg("safety.reason.passed")],
             limitations=default_smtp_lab_limitations,
         ),
         resolved_ips,
@@ -142,19 +143,19 @@ def _classify_lab_host(
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
-        return [], ["Lab SMTP host must be localhost, a literal lab IP, or an allowed host."]
+        return [], [msg("safety.reason.host_type")]
 
     if transport == "localhost":
         if ip.is_loopback:
             return [str(ip)], []
-        return [str(ip)], ["localhost transport only permits loopback addresses."]
+        return [str(ip)], [msg("safety.reason.loopback")]
 
     if transport == "private-lab":
         if ip.is_loopback or ip.is_private or ip.is_link_local:
             return [str(ip)], []
-        return [str(ip)], ["private-lab transport only permits loopback, private, or link-local addresses."]
+        return [str(ip)], [msg("safety.reason.private_ip")]
 
-    return [str(ip)], ["Unsupported network transport for host classification."]
+    return [str(ip)], [msg("safety.reason.host_transport")]
 
 
 def _all_loopback(ips: list[str]) -> bool:

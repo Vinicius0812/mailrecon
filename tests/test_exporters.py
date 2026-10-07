@@ -50,6 +50,7 @@ def build_investigation_result() -> InvestigationResult:
                 source="seed_email",
                 confidence="high",
                 confidence_score=90,
+                review_priority_score=90,
                 status="valid",
             )
         ],
@@ -62,6 +63,7 @@ def build_investigation_result() -> InvestigationResult:
                 source="public_profile_pivot",
                 confidence="low",
                 confidence_score=50,
+                review_priority_score=50,
                 status="manual_review",
                 notes=["Public URL generated for safe manual review."],
             )
@@ -84,6 +86,7 @@ def build_investigation_result() -> InvestigationResult:
         pivot_suggestions=["Review naming patterns."],
         limitations=["Results are OSINT indicators."],
         overall_confidence_score=73,
+        review_priority_score=73,
         refinement_file_path=".mailrecon-temp/last-investigation-refinement.json",
         refinement_excluded_links=["https://www.linkedin.com/in/other-user/"],
     )
@@ -102,7 +105,7 @@ def test_export_json_writes_file(tmp_path) -> None:
 def test_export_markdown_writes_file(tmp_path) -> None:
     output = tmp_path / "report.md"
 
-    export_markdown(build_result(), output)
+    export_markdown(build_result(), output, language="en")
 
     content = output.read_text(encoding="utf-8")
     assert "# MailRecon Report" in content
@@ -113,7 +116,7 @@ def test_export_markdown_writes_file(tmp_path) -> None:
 def test_export_markdown_can_reveal_email(tmp_path) -> None:
     output = tmp_path / "report-revealed.md"
 
-    export_markdown(build_result(), output, mask_sensitive=False)
+    export_markdown(build_result(), output, mask_sensitive=False, language="en")
 
     content = output.read_text(encoding="utf-8")
     assert "- Email: user@example.com" in content
@@ -122,12 +125,12 @@ def test_export_markdown_can_reveal_email(tmp_path) -> None:
 def test_export_investigation_markdown_writes_file(tmp_path) -> None:
     output = tmp_path / "investigation.md"
 
-    export_investigation_markdown(build_investigation_result(), output)
+    export_investigation_markdown(build_investigation_result(), output, language="en")
 
     content = output.read_text(encoding="utf-8")
     assert "# MailRecon Investigation Report" in content
     assert "- Review priority: 73/100" in content
-    assert "- refinement_excluded_links: 1" in content
+    assert "- Refinement excluded links: 1" in content
     assert "## Candidate emails" in content
     assert "u**r@example.com" in content
     assert "## Public-profile pivots" in content

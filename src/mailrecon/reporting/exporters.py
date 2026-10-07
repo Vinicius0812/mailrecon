@@ -5,390 +5,227 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from mailrecon.core.i18n import serialize_localized, translate
 from mailrecon.core.models import InvestigationResult, ReconResult, SmtpLabValidationResult
-from mailrecon.core.validators import mask_email_address
+from mailrecon.reporting.console import _ReportText, _mask_text
 
 
 def export_json(
     result: ReconResult | InvestigationResult | SmtpLabValidationResult,
     output_path: str | Path,
+    language: str = "pt-br",
 ) -> Path:
-    """Export a result as JSON."""
+    """Export localized prose with provenance, preserving machine keys and enums."""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+    content = serialize_localized(result, language)
+    path.write_text(json.dumps(content, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def _write_markdown(output_path: str | Path, lines: list[str]) -> Path:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _prose_section(lines: list[str], text: _ReportText, heading: str, values: list[str]) -> None:
+    if values:
+        lines.extend(["", f"## {text.label(heading)}", ""])
+        lines.extend(f"- {text.prose(value)}" for value in values)
+
+
+def _item_details(lines: list[str], text: _ReportText, item: object) -> None:
+    lines.extend(f"  - {label}: {value}" for label, value in text.confidence_details(item))
+    for field, label in (
+        ("decision_reasons", "decision_reason"),
+        ("limitations", "limitation"),
+        ("notes", "note"),
+    ):
+        for value in getattr(item, field, []):
+            lines.append(f"  - {text.label(label)}: {text.prose(value)}")
 
 
 def export_markdown(
     result: ReconResult,
     output_path: str | Path,
     mask_sensitive: bool = True,
+    language: str = "pt-br",
 ) -> Path:
     """Export a recon result as Markdown."""
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    display_email = mask_email_address(result.email) if mask_sensitive else result.email
-
-    lines = [
-        "# MailRecon Report",
-        "",
-        f"- Email: {display_email}",
-        f"- Domain: {result.domain}",
-        f"- Format valid: {'yes' if result.is_valid else 'no'}",
-        f"- Domain resolves: {'yes' if result.dns.resolves else 'no'}",
-        f"- Domain status: {result.dns.domain_status}",
-        f"- Mail capability: {result.dns.email_acceptance_status}",
-        f"- Provider family: {result.dns.provider_family}",
-        f"- SPF status: {result.dns.spf_status}",
-        f"- DMARC status: {result.dns.dmarc_status}",
-        f"- Technical review priority: {result.technical_assessment.review_priority_score}/100",
-        f"- Role account status: {result.technical_assessment.role_account_status}",
-        f"- Disposable status: {result.technical_assessment.disposable_status}",
-        f"- Catch-all status: {result.technical_assessment.catch_all_status}",
-        f"- MX records found: {'yes' if result.dns.mx_records else 'no'}",
-        f"- HIBP status: {result.hibp.status}",
-        f"- HIBP queried: {'yes' if result.hibp.queried else 'no'}",
-        f"- Generated at: {result.generated_at}",
+    result = translate(result, language)
+    text = _ReportText(language, mask_sensitive)
+    label = text.label
+    lines = [f"# {label('report_title')}", ""]
+    rows = [
+        ("email", text.email(result.email)),
+        ("domain", text.prose(result.domain)),
+        ("format_valid", text.boolean(result.is_valid)),
+        ("domain_resolves", text.boolean(result.dns.resolves)),
+        ("domain_status", text.human(result.dns.domain_status)),
+        ("mail_capability", text.human(result.dns.email_acceptance_status)),
+        ("provider_family", text.human(result.dns.provider_family)),
+        ("spf_status", text.human(result.dns.spf_status)),
+        ("dmarc_status", text.human(result.dns.dmarc_status)),
+        ("technical_review_priority", f"{result.technical_assessment.review_priority_score}/100"),
+        ("role_account_status", text.human(result.technical_assessment.role_account_status)),
+        ("disposable_status", text.human(result.technical_assessment.disposable_status)),
+        ("catch_all_status", text.human(result.technical_assessment.catch_all_status)),
+        ("mx_found", text.boolean(bool(result.dns.mx_records))),
+        ("hibp_status", text.human(result.hibp.status)),
+        ("hibp_queried", text.boolean(result.hibp.queried)),
+        ("generated_at", result.generated_at),
     ]
-
-    if result.dns.a_records:
-        lines.extend(["", "## A records", ""])
-        lines.extend(f"- {record}" for record in result.dns.a_records)
-
-    if result.dns.mx_records:
-        lines.extend(["", "## MX records", ""])
-        lines.extend(f"- {record}" for record in result.dns.mx_records)
-
-    if result.dns.errors:
-        lines.extend(["", "## DNS notes", ""])
-        lines.extend(f"- {error}" for error in result.dns.errors)
-
-    if result.technical_assessment.decision_reasons:
-        lines.extend(["", "## Technical assessment reasons", ""])
-        lines.extend(f"- {reason}" for reason in result.technical_assessment.decision_reasons)
-
-    if result.technical_assessment.limitations:
-        lines.extend(["", "## Technical assessment limitations", ""])
-        lines.extend(f"- {limitation}" for limitation in result.technical_assessment.limitations)
-
+    lines.extend(f"- {label(key)}: {value}" for key, value in rows)
+    for heading, values in (
+        ("a_records", result.dns.a_records),
+        ("mx_records", result.dns.mx_records),
+        ("dns_notes", result.dns.errors),
+        ("technical_reasons", result.technical_assessment.decision_reasons),
+        ("technical_limitations", result.technical_assessment.limitations),
+    ):
+        _prose_section(lines, text, heading, values)
     if result.hibp.breaches:
-        lines.extend(["", "## HIBP breaches", ""])
-        lines.extend(
-            f"- {breach.get('Name', 'Unknown breach')}: {breach.get('Title', 'No title')}"
-            for breach in result.hibp.breaches
-        )
-
+        lines.extend(["", f"## {label('hibp_breaches')}", ""])
+        for breach in result.hibp.breaches:
+            name = text.prose(breach.get("Name", label("unknown_breach")))
+            title = text.prose(breach.get("Title", label("no_title")))
+            lines.append(f"- {name}: {title}")
     if result.hibp.error:
-        lines.extend(["", "## HIBP notes", "", f"- {result.hibp.error}"])
-
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return path
+        _prose_section(lines, text, "hibp_notes", [result.hibp.error])
+    return _write_markdown(output_path, lines)
 
 
 def export_smtp_lab_markdown(
     result: SmtpLabValidationResult,
     output_path: str | Path,
+    language: str = "pt-br",
+    mask_sensitive: bool = True,
 ) -> Path:
-    """Export a lab-only SMTP validation result as Markdown."""
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    lines = [
-        "# MailRecon Lab SMTP Validation",
-        "",
-        "- Mode: LAB ONLY - not evidence of real mailbox existence",
-        f"- Email: {result.email}",
-        f"- Lab domain: {result.lab_domain}",
-        f"- Transport: {result.transport}",
-        f"- Host: {result.host}:{result.port}",
-        f"- Network used: {'yes' if result.network_used else 'no'}",
-        f"- Safety status: {result.safety_decision.status}",
-        f"- Generated at: {result.generated_at}",
+    """Export lab SMTP validation; wire replies are not translated."""
+    result = translate(result, language)
+    text = _ReportText(language, mask_sensitive)
+    label = text.label
+    lines = [f"# {label('smtp_title')}", ""]
+    rows = [
+        ("mode", label("lab_only")),
+        ("email", text.email(result.email)),
+        ("lab_domain", text.prose(result.lab_domain)),
+        ("transport", text.human(result.transport)),
+        ("host", text.prose(f"{result.host}:{result.port}")),
+        ("network_used", text.boolean(result.network_used)),
+        ("safety_status", text.human(result.safety_decision.status)),
+        ("generated_at", result.generated_at),
     ]
-
-    if result.resolved_ips:
-        lines.extend(["", "## Resolved IPs", ""])
-        lines.extend(f"- {ip}" for ip in result.resolved_ips)
-
-    if result.safety_decision.reasons:
-        lines.extend(["", "## Safety Decision", ""])
-        lines.extend(f"- {reason}" for reason in result.safety_decision.reasons)
-
+    lines.extend(f"- {label(key)}: {value}" for key, value in rows)
+    _prose_section(lines, text, "resolved_ips", result.resolved_ips)
+    _prose_section(lines, text, "safety_decision", result.safety_decision.reasons)
     if result.checks_run:
-        lines.extend(["", "## Checks", ""])
+        lines.extend(["", f"## {label('checks')}", ""])
         for check in result.checks_run:
-            code = f" | smtp_code={check.smtp_code}" if check.smtp_code is not None else ""
-            lines.append(f"- {check.check} | status={check.status}{code}")
+            code = f" | {label('smtp_code')}={check.smtp_code}" if check.smtp_code is not None else ""
+            lines.append(f"- {check.check} | {label('status')}={text.human(check.status)}{code}")
             if check.message:
-                lines.append(f"  - message: {check.message}")
-
-    if result.limitations:
-        lines.extend(["", "## Limitations", ""])
-        lines.extend(f"- {limitation}" for limitation in result.limitations)
-
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return path
+                reply = _mask_text(check.message) if mask_sensitive else check.message
+                lines.append(f"  - {label('message')}: {reply}")
+    _prose_section(lines, text, "limitations", result.safety_decision.limitations + result.limitations)
+    return _write_markdown(output_path, lines)
 
 
 def export_investigation_markdown(
     result: InvestigationResult,
     output_path: str | Path,
     mask_sensitive: bool = True,
-    language: str = "en",
+    language: str = "pt-br",
 ) -> Path:
     """Export an investigation result as Markdown."""
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    copy = _markdown_copy(language)
-
-    lines = [
-        copy["title"],
-        "",
-        f"- {copy['generated_at']}: {result.generated_at}",
-        f"- {copy['review_priority']}: {result.review_priority_score or result.overall_confidence_score}/100",
-        f"- {copy['seed_emails']}: {len(result.query.emails)}",
-        f"- {copy['seed_usernames']}: {len(result.query.usernames)}",
-        f"- {copy['seed_domains']}: {len(result.query.domains)}",
-        f"- {copy['candidate_emails']}: {len(result.candidate_emails)}",
-        f"- {copy['profile_pivots']}: {len(result.profile_pivots)}",
-        f"- {copy['refinement_excluded_links']}: {len(result.refinement_excluded_links)}",
+    result = translate(result, language)
+    text = _ReportText(language, mask_sensitive)
+    label = text.label
+    lines = [f"# {label('investigation_report_title')}", ""]
+    rows = [
+        ("generated_at", result.generated_at),
+        ("review_priority", f"{result.review_priority_score}/100"),
+        ("seed_emails", len(result.query.emails)),
+        ("seed_usernames", len(result.query.usernames)),
+        ("seed_domains", len(result.query.domains)),
+        ("candidate_emails", len(result.candidate_emails)),
+        ("public_profile_pivots", len(result.profile_pivots)),
+        ("refinement_excluded_links", len(result.refinement_excluded_links)),
     ]
-
+    lines.extend(f"- {label(key)}: {value}" for key, value in rows)
+    lines.extend(f"- {name}: {value}" for name, value in text.confidence_details(result))
     if result.confidence_breakdown:
-        lines.extend(["", copy["confidence_breakdown_heading"], ""])
-        lines.extend(
-            f"- {label}: {score}/100"
-            for label, score in result.confidence_breakdown.items()
-        )
-
-    if result.query.names:
-        lines.extend(["", copy["names_heading"], ""])
-        lines.extend(f"- {name}" for name in result.query.names)
-
-    if result.query.organizations:
-        lines.extend(["", copy["organizations_heading"], ""])
-        lines.extend(f"- {organization}" for organization in result.query.organizations)
-
-    if result.query.contexts:
-        lines.extend(["", copy["context_heading"], ""])
-        lines.extend(f"- {context}" for context in result.query.contexts)
-
+        lines.extend(["", f"## {label('confidence_breakdown')}", ""])
+        lines.extend(f"- {text.human(key)}: {score}/100" for key, score in result.confidence_breakdown.items())
+    for heading, values in (("names", result.query.names), ("organizations", result.query.organizations), ("context", result.query.contexts)):
+        _prose_section(lines, text, heading, values)
     if result.candidate_emails:
-        lines.extend(["", copy["candidate_emails_heading"], ""])
+        lines.extend(["", f"## {label('candidate_emails')}", ""])
         for candidate in result.candidate_emails:
-            display_email = candidate.masked_email if mask_sensitive else candidate.email
             lines.append(
-                f"- {display_email} | {copy['status']}={candidate.status} | {copy['source']}={candidate.source} | {copy['confidence']}={candidate.confidence} | {copy['evidence_strength']}={candidate.evidence_strength} | {copy['review_priority']}={candidate.review_priority_score or candidate.confidence_score}/100"
+                f"- {text.email(candidate.email)} | {label('status')}={text.human(candidate.status)} "
+                f"| {label('source')}={text.human(candidate.source)} "
+                f"| {label('confidence')}={text.human(candidate.confidence)} "
+                f"| {label('evidence_strength')}={text.human(candidate.evidence_strength)} "
+                f"| {label('review_priority')}={candidate.review_priority_score}/100"
             )
-            lines.append(f"  - {copy['risk_level']}: {candidate.risk_level}")
-            lines.append(f"  - role_account_status: {candidate.role_account_status}")
-            lines.append(f"  - disposable_status: {candidate.disposable_status}")
-            lines.append(f"  - provider_family: {candidate.provider_family}")
-            for reason in candidate.decision_reasons:
-                lines.append(f"  - {copy['decision_reason']}: {reason}")
-            for limitation in candidate.limitations:
-                lines.append(f"  - {copy['limitation']}: {limitation}")
-            for note in candidate.notes:
-                lines.append(f"  - {copy['note']}: {note}")
-
+            for key, value in (
+                ("risk_level", candidate.risk_level),
+                ("role_account_status", candidate.role_account_status),
+                ("disposable_status", candidate.disposable_status),
+                ("provider_family", candidate.provider_family),
+            ):
+                lines.append(f"  - {label(key)}: {text.human(value)}")
+            _item_details(lines, text, candidate)
     if result.profile_pivots:
-        lines.extend(["", copy["profile_pivots_heading"], ""])
+        lines.extend(["", f"## {label('public_profile_pivots')}", ""])
         for pivot in result.profile_pivots:
             lines.append(
-                f"- {pivot.platform} | handle={pivot.handle} | {copy['status']}={pivot.status} | {copy['resolution_status']}={pivot.resolution_status} | {copy['confidence']}={pivot.confidence} | {copy['evidence_strength']}={pivot.evidence_strength} | {copy['review_priority']}={pivot.review_priority_score or pivot.confidence_score}/100"
+                f"- {text.prose(pivot.platform)} | {label('handle')}={text.prose(pivot.handle)} "
+                f"| {label('status')}={text.human(pivot.status)} "
+                f"| {label('resolution_status')}={text.human(pivot.resolution_status)} "
+                f"| {label('confidence')}={text.human(pivot.confidence)} "
+                f"| {label('evidence_strength')}={text.human(pivot.evidence_strength)} "
+                f"| {label('review_priority')}={pivot.review_priority_score}/100"
             )
-            lines.append(f"  - {copy['profile_url']}: {pivot.profile_url}")
-            lines.append(f"  - {copy['search_url']}: {pivot.search_url}")
-            if pivot.final_url:
-                lines.append(f"  - {copy['final_url']}: {pivot.final_url}")
+            for key, value in (("profile_url", pivot.profile_url), ("search_url", pivot.search_url), ("final_url", pivot.final_url)):
+                if value:
+                    lines.append(f"  - {label(key)}: {text.prose(value)}")
             if pivot.http_status_code is not None:
-                lines.append(f"  - {copy['http_status']}: {pivot.http_status_code}")
-            for reason in pivot.ambiguity_reasons:
-                lines.append(f"  - ambiguity_reason: {reason}")
-            for field in pivot.matched_fields:
-                lines.append(f"  - matched_field: {field}")
-            for field in pivot.missing_fields:
-                lines.append(f"  - missing_field: {field}")
-            for field in pivot.conflicting_fields:
-                lines.append(f"  - conflicting_field: {field}")
-            for reason in pivot.decision_reasons:
-                lines.append(f"  - {copy['decision_reason']}: {reason}")
-            for limitation in pivot.limitations:
-                lines.append(f"  - {copy['limitation']}: {limitation}")
-            for note in pivot.notes:
-                lines.append(f"  - {copy['note']}: {note}")
-
-    if result.findings:
-        lines.extend(["", copy["findings_heading"], ""])
-        lines.extend(
-            f"- {_mask_text(finding) if mask_sensitive else finding}"
-            for finding in result.findings
-        )
-
+                lines.append(f"  - {label('http_status')}: {pivot.http_status_code}")
+            for key, values in (
+                ("ambiguity_reason", pivot.ambiguity_reasons),
+                ("matched_field", pivot.matched_fields),
+                ("missing_field", pivot.missing_fields),
+                ("conflicting_field", pivot.conflicting_fields),
+            ):
+                lines.extend(f"  - {label(key)}: {text.human(value)}" for value in values)
+            _item_details(lines, text, pivot)
+    _prose_section(lines, text, "findings", result.findings)
     if result.evidences:
-        lines.extend(["", copy["evidence_heading"], ""])
+        lines.extend(["", f"## {label('evidence')}", ""])
         for evidence in result.evidences:
             lines.append(
-                f"- {evidence.title} | {copy['source']}={evidence.source} | {copy['method']}={evidence.method} | {copy['confidence']}={evidence.confidence} | {copy['evidence_strength']}={evidence.evidence_strength} | {copy['score']}={evidence.confidence_score}/100"
+                f"- {text.prose(evidence.title)} | {label('source')}={text.human(evidence.source)} "
+                f"| {label('method')}={text.human(evidence.method)} "
+                f"| {label('confidence')}={text.human(evidence.confidence)} "
+                f"| {label('evidence_strength')}={text.human(evidence.evidence_strength)} "
+                f"| {label('score')}={evidence.confidence_score}/100"
             )
-            summary = _mask_text(evidence.summary) if mask_sensitive else evidence.summary
-            lines.append(f"  - {copy['summary']}: {summary}")
-            lines.append(f"  - {copy['reference']}: {evidence.reference}")
-            lines.append(f"  - {copy['collected_at']}: {evidence.collected_at}")
-            if evidence.observations:
-                lines.append(f"  - {copy['observations']}: {evidence.observations}")
+            for key, value in (("summary", evidence.summary), ("reference", evidence.reference), ("collected_at", evidence.collected_at), ("observations", evidence.observations)):
+                if value is not None:
+                    lines.append(f"  - {label(key)}: {text.prose(value)}")
             if evidence.risk_level != "none":
-                lines.append(f"  - {copy['risk_level']}: {evidence.risk_level}")
-            for reason in evidence.decision_reasons:
-                lines.append(f"  - {copy['decision_reason']}: {reason}")
-            for limitation in evidence.limitations:
-                lines.append(f"  - {copy['limitation']}: {limitation}")
-
-    if result.risks:
-        lines.extend(["", copy["risks_heading"], ""])
-        lines.extend(
-            f"- {_mask_text(risk) if mask_sensitive else risk}"
-            for risk in result.risks
-        )
-
-    if result.pivot_suggestions:
-        lines.extend(["", copy["pivot_suggestions_heading"], ""])
-        lines.extend(f"- {pivot}" for pivot in result.pivot_suggestions)
-
-    if result.limitations:
-        lines.extend(["", copy["limitations_heading"], ""])
-        lines.extend(f"- {limitation}" for limitation in result.limitations)
-
+                lines.append(f"  - {label('risk_level')}: {text.human(evidence.risk_level)}")
+            _item_details(lines, text, evidence)
+    for heading, values in (("risks", result.risks), ("pivot_suggestions", result.pivot_suggestions), ("limitations", result.limitations)):
+        _prose_section(lines, text, heading, values)
     if result.refinement_file_path:
-        lines.extend(["", copy["refinement_heading"], ""])
-        lines.append(f"- {copy['refinement_file_path']}: {result.refinement_file_path}")
+        lines.extend(["", f"## {label('refinement')}", ""])
+        lines.append(f"- {label('refinement_file_path')}: {text.prose(result.refinement_file_path)}")
         if result.refinement_excluded_links:
-            lines.append(
-                f"- {copy['refinement_excluded_links']}: {len(result.refinement_excluded_links)}"
-            )
-            for link in result.refinement_excluded_links:
-                lines.append(f"  - {link}")
-
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return path
-
-
-def _mask_text(text: str) -> str:
-    """Mask every email address found inside a free-form text snippet."""
-    parts = []
-    current = []
-    separators = set(" \t\r\n,;:()[]{}<>\"'")
-
-    def flush() -> None:
-        if not current:
-            return
-        token = "".join(current)
-        if "@" in token and "." in token.partition("@")[2]:
-            parts.append(mask_email_address(token))
-        else:
-            parts.append(token)
-        current.clear()
-
-    for char in text:
-        if char in separators:
-            flush()
-            parts.append(char)
-        else:
-            current.append(char)
-
-    flush()
-    return "".join(parts)
-
-
-def _markdown_copy(language: str) -> dict[str, str]:
-    """Return localized copy for investigation Markdown exports."""
-    if language == "pt-br":
-        return {
-            "title": "# Relatório de Investigação MailRecon",
-            "generated_at": "Gerado em",
-            "review_priority": "Prioridade de revisão",
-            "confidence_breakdown_heading": "## Quebra de confiança",
-            "seed_emails": "E-mails de origem",
-            "seed_usernames": "Usernames de origem",
-            "seed_domains": "Domínios de origem",
-            "candidate_emails": "E-mails candidatos",
-            "profile_pivots": "Pivôs de perfis públicos",
-            "refinement_heading": "## Refinamento",
-            "refinement_file_path": "arquivo_refinamento",
-            "refinement_excluded_links": "links_excluidos_refinamento",
-            "names_heading": "## Nomes",
-            "organizations_heading": "## Organizações",
-            "context_heading": "## Contexto",
-            "candidate_emails_heading": "## E-mails candidatos",
-            "profile_pivots_heading": "## Pivôs de perfis públicos",
-            "findings_heading": "## Achados",
-            "evidence_heading": "## Evidências",
-            "risks_heading": "## Riscos",
-            "pivot_suggestions_heading": "## Sugestões de pivô",
-            "limitations_heading": "## Limitações",
-            "status": "status",
-            "resolution_status": "status_resolucao",
-            "source": "fonte",
-            "confidence": "confianca",
-            "evidence_strength": "forca_evidencia",
-            "risk_level": "nivel_risco",
-            "score": "score",
-            "decision_reason": "razao_decisao",
-            "limitation": "limitacao",
-            "note": "nota",
-            "profile_url": "url_perfil",
-            "search_url": "url_busca",
-            "final_url": "url_final",
-            "http_status": "http_status",
-            "method": "metodo",
-            "summary": "resumo",
-            "reference": "referencia",
-            "collected_at": "coletado_em",
-            "observations": "observacoes",
-        }
-
-    return {
-        "title": "# MailRecon Investigation Report",
-        "generated_at": "Generated at",
-        "review_priority": "Review priority",
-        "confidence_breakdown_heading": "## Confidence breakdown",
-        "seed_emails": "Seed emails",
-        "seed_usernames": "Seed usernames",
-        "seed_domains": "Seed domains",
-        "candidate_emails": "Candidate emails",
-        "profile_pivots": "Public-profile pivots",
-        "refinement_heading": "## Refinement",
-        "refinement_file_path": "refinement_file_path",
-        "refinement_excluded_links": "refinement_excluded_links",
-        "names_heading": "## Names",
-        "organizations_heading": "## Organizations",
-        "context_heading": "## Context",
-        "candidate_emails_heading": "## Candidate emails",
-        "profile_pivots_heading": "## Public-profile pivots",
-        "findings_heading": "## Findings",
-        "evidence_heading": "## Evidence",
-        "risks_heading": "## Risks",
-        "pivot_suggestions_heading": "## Pivot suggestions",
-        "limitations_heading": "## Limitations",
-        "status": "status",
-        "resolution_status": "resolution_status",
-        "source": "source",
-        "confidence": "confidence",
-        "evidence_strength": "evidence_strength",
-        "risk_level": "risk_level",
-        "score": "score",
-        "decision_reason": "decision_reason",
-        "limitation": "limitation",
-        "note": "note",
-        "profile_url": "profile_url",
-        "search_url": "search_url",
-        "final_url": "final_url",
-        "http_status": "http_status",
-        "method": "method",
-        "summary": "summary",
-        "reference": "reference",
-        "collected_at": "collected_at",
-        "observations": "observations",
-    }
+            lines.append(f"- {label('refinement_excluded_links')}: {len(result.refinement_excluded_links)}")
+            lines.extend(f"  - {text.prose(link)}" for link in result.refinement_excluded_links)
+    return _write_markdown(output_path, lines)

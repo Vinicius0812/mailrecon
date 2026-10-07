@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 import httpx
 
+from mailrecon.core.i18n import msg
 from mailrecon.core.models import HibpResult
 
 
@@ -54,14 +55,14 @@ class HibpService:
                 queried=True,
                 status="timeout",
                 breaches=[],
-                error="HIBP request timed out.",
+                error=msg("hibp.error.timeout"),
             )
         except httpx.HTTPError as exc:
             return HibpResult(
                 queried=True,
                 status="request_error",
                 breaches=[],
-                error=f"HIBP request failed: {exc}",
+                error=msg("hibp.error.request", error=str(exc)),
             )
 
         if response.status_code == 404:
@@ -76,7 +77,7 @@ class HibpService:
                 queried=True,
                 status="unauthorized",
                 breaches=[],
-                error="HIBP rejected the API key.",
+                error=msg("hibp.error.unauthorized"),
             )
 
         if response.status_code == 403:
@@ -84,7 +85,7 @@ class HibpService:
                 queried=True,
                 status="forbidden",
                 breaches=[],
-                error="HIBP denied access to this request.",
+                error=msg("hibp.error.forbidden"),
             )
 
         if response.status_code == 429:
@@ -92,7 +93,7 @@ class HibpService:
                 queried=True,
                 status="rate_limited",
                 breaches=[],
-                error="HIBP rate limit reached. Try again later.",
+                error=msg("hibp.error.rate_limited"),
             )
 
         if response.is_error:
@@ -100,7 +101,7 @@ class HibpService:
                 queried=True,
                 status="http_error",
                 breaches=[],
-                error=f"HIBP returned HTTP {response.status_code}.",
+                error=msg("hibp.error.http", status_code=response.status_code),
             )
 
         try:
@@ -110,7 +111,7 @@ class HibpService:
                 queried=True,
                 status="invalid_response",
                 breaches=[],
-                error="HIBP returned a response that was not valid JSON.",
+                error=msg("hibp.error.json"),
             )
 
         if not isinstance(breaches, list) or not all(
@@ -120,7 +121,7 @@ class HibpService:
                 queried=True,
                 status="invalid_response",
                 breaches=[],
-                error="HIBP returned an unexpected response shape.",
+                error=msg("hibp.error.shape"),
             )
 
         return HibpResult(

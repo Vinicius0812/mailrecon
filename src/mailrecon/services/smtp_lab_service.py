@@ -7,6 +7,7 @@ import re
 import smtplib
 import socket
 
+from mailrecon.core.i18n import msg
 from mailrecon.core.models import (
     SafetyDecision,
     SmtpLabCheckResult,
@@ -71,7 +72,7 @@ class SmtpLabValidationService:
                     SmtpLabCheckResult(
                         check=check,
                         status="blocked_by_safety_policy",
-                        message="Blocked before any SMTP interaction.",
+                        message=msg("smtp.message.blocked"),
                         network_used=False,
                     )
                     for check in normalized_checks
@@ -118,7 +119,7 @@ class SmtpLabValidationService:
                 check=check,
                 status=status,
                 smtp_code=250 if status == "mocked_accept" else 550,
-                message="Mock lab transport result; no network used.",
+                message=msg("smtp.message.mock"),
                 network_used=False,
             )
             for check in checks
@@ -159,7 +160,7 @@ class SmtpLabValidationService:
                 SmtpLabCheckResult(
                     check=check,
                     status="connection_failed",
-                    message=f"Lab SMTP interaction failed: {exc}",
+                    message=msg("smtp.error.interaction", error=str(exc)),
                     network_used=True,
                 )
                 for check in checks
@@ -197,7 +198,7 @@ class SmtpLabValidationService:
             return SmtpLabCheckResult(
                 check=check,
                 status="check_not_supported",
-                message="Unsupported lab SMTP check.",
+                message=msg("smtp.error.check"),
                 network_used=True,
             )
 
@@ -262,24 +263,24 @@ def _normalize_lab_email(email: str) -> str:
     """Validate lab email syntax while allowing reserved lab domains."""
     value = email.strip()
     if value.count("@") != 1:
-        raise ValueError("Lab SMTP email must contain exactly one @ sign.")
+        raise ValueError(msg("smtp.error.email_at"))
 
     local_part, domain = value.split("@", maxsplit=1)
     domain = domain.lower()
     if not local_part or not domain:
-        raise ValueError("Lab SMTP email must include local-part and domain.")
+        raise ValueError(msg("smtp.error.email_parts"))
 
     if not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+", local_part):
-        raise ValueError("Lab SMTP email local-part contains unsupported characters.")
+        raise ValueError(msg("smtp.error.local_characters"))
 
     labels = domain.split(".")
     if any(not label for label in labels):
-        raise ValueError("Lab SMTP email domain contains an empty label.")
+        raise ValueError(msg("smtp.error.empty_label"))
 
     for label in labels:
         if not re.fullmatch(r"[a-z0-9-]+", label):
-            raise ValueError("Lab SMTP email domain contains unsupported characters.")
+            raise ValueError(msg("smtp.error.domain_characters"))
         if label.startswith("-") or label.endswith("-"):
-            raise ValueError("Lab SMTP email domain labels cannot start or end with hyphen.")
+            raise ValueError(msg("smtp.error.hyphen"))
 
     return f"{local_part}@{domain}"

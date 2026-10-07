@@ -8,14 +8,20 @@ import hashlib
 import json
 from pathlib import Path
 
+from mailrecon.core.i18n import Language, msg, restore_messages, serialize_localized
 from mailrecon.core.models import InvestigationInput, InvestigationResult
 
 
 class RefinementStateService:
     """Stores and reapplies manual exclusions for the latest investigation."""
 
-    def __init__(self, state_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        state_path: str | Path | None = None,
+        language: Language | str = Language.PT_BR,
+    ) -> None:
         self.state_path = Path(state_path or ".mailrecon-temp/last-investigation-refinement.json")
+        self.language = language
 
     def apply_and_store(
         self,
@@ -50,10 +56,14 @@ class RefinementStateService:
         except (OSError, json.JSONDecodeError):
             return set()
 
+        if not isinstance(payload, dict):
+            return set()
         if payload.get("query_fingerprint") != query_fingerprint:
             return set()
 
         raw_links = payload.get("excluded_profile_urls", [])
+        if not isinstance(raw_links, list):
+            return set()
         return {link for link in raw_links if isinstance(link, str) and link.strip()}
 
     def _write_state(
@@ -79,31 +89,31 @@ class RefinementStateService:
                 "candidate_emails": query.candidate_emails,
             },
             "run_options": run_options,
-            "instructions": (
-                "Add public-profile links that were manually disproved to "
-                "'excluded_profile_urls' and rerun the same investigation to hide them."
-            ),
+            "instructions": msg("refinement.instructions"),
             "excluded_profile_urls": sorted(excluded_links),
             "suggested_profile_urls": profile_urls,
         }
         self.state_path.write_text(
-            json.dumps(payload, indent=2),
+            json.dumps(serialize_localized(payload, self.language), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
     def load_last_investigation(self) -> tuple[InvestigationInput, dict[str, object]]:
         """Load the latest saved investigation query and its reusable run options."""
         if not self.state_path.exists():
-            raise ValueError("No saved investigation refinement file was found.")
+            raise ValueError(msg("refinement.error.missing"))
 
         try:
             payload = json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError("The saved investigation refinement file is unreadable.") from exc
+            raise ValueError(msg("refinement.error.unreadable")) from exc
 
+        if not isinstance(payload, dict):
+            raise ValueError(msg("refinement.error.parameters"))
+        payload = restore_messages(payload)
         query_data = payload.get("query")
         if not isinstance(query_data, dict):
-            raise ValueError("The saved refinement file does not contain investigation parameters.")
+            raise ValueError(msg("refinement.error.parameters"))
 
         query = InvestigationInput(
             names=self._coerce_string_list(query_data.get("names")),
@@ -141,7 +151,7 @@ class RefinementStateService:
         ]
         filtered_limitations = list(result.limitations)
         filtered_limitations.append(
-            f"{len(excluded_links)} public-profile link(s) were manually excluded through the refinement file."
+            msg("refinement.limitation.excluded", count=len(excluded_links))
         )
         return replace(
             result,

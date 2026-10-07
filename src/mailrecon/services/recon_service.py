@@ -2,6 +2,7 @@
 
 from typing import Callable
 
+from mailrecon.core.i18n import msg
 from mailrecon.core.models import EmailTechnicalAssessment, ReconResult
 from mailrecon.core.validators import validate_email_input
 from mailrecon.services.dns_service import DnsService
@@ -45,14 +46,14 @@ class ReconService:
         progress_callback: Callable[[str], None] | None = None,
     ) -> ReconResult:
         """Run the main analysis flow for one email address."""
-        self._notify(progress_callback, "Validating email format...")
+        self._notify(progress_callback, msg("recon.progress.validate"))
         is_valid, normalized_or_error, domain = validate_email_input(email)
         if not is_valid or domain is None:
             raise ValueError(normalized_or_error)
 
-        self._notify(progress_callback, f"Checking DNS and MX records for {domain}...")
+        self._notify(progress_callback, msg("recon.progress.dns", domain=domain))
         dns_result = self.dns_service.lookup_domain(domain)
-        self._notify(progress_callback, f"Querying HIBP for {normalized_or_error}...")
+        self._notify(progress_callback, msg("recon.progress.hibp", email=normalized_or_error))
         hibp_result = self.hibp_service.query_breaches(normalized_or_error)
         technical_assessment = self._build_technical_assessment(
             email=normalized_or_error,
@@ -88,19 +89,19 @@ class ReconService:
             role_account_status,
         )
         decision_reasons = [
-            "Email syntax is valid.",
-            f"Domain status is {dns_result.domain_status}.",
-            f"Email acceptance status is {dns_result.email_acceptance_status}.",
-            f"Provider family is {dns_result.provider_family}.",
+            msg("recon.reason.valid_syntax"),
+            msg("recon.reason.domain_status", status=dns_result.domain_status),
+            msg("recon.reason.mail_status", status=dns_result.email_acceptance_status),
+            msg("recon.reason.provider", provider=dns_result.provider_family),
         ]
         if dns_result.spf_status == "present":
-            decision_reasons.append("Domain publishes SPF.")
+            decision_reasons.append(msg("recon.reason.spf"))
         if dns_result.dmarc_status == "present":
-            decision_reasons.append("Domain publishes DMARC.")
+            decision_reasons.append(msg("recon.reason.dmarc"))
         if disposable_status == "disposable":
-            decision_reasons.append("Domain is on the local disposable-domain list.")
+            decision_reasons.append(msg("recon.reason.disposable"))
         if role_account_status == "role_account":
-            decision_reasons.append("Local-part looks like a role or shared mailbox.")
+            decision_reasons.append(msg("recon.reason.role"))
 
         return EmailTechnicalAssessment(
             syntax_status="valid",
@@ -115,8 +116,8 @@ class ReconService:
             review_priority_score=score,
             decision_reasons=decision_reasons,
             limitations=[
-                "Technical assessment does not confirm individual mailbox existence.",
-                "Catch-all status is not tested because MailRecon avoids SMTP probing.",
+                msg("recon.limitation.mailbox"),
+                msg("recon.limitation.catch_all"),
             ],
         )
 
