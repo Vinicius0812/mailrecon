@@ -86,6 +86,27 @@ Resultados locais deste extra, Windows / Python 3.11.9:
 
 Ambos os READMEs já continham os comandos de build sem isolamento e package smoke, portanto foram preservados. Nenhuma leitura de `.env` real, credenciais, estado ou relatórios de investigação reais; nenhuma rede real, DNS/SMTP/HIBP, teste em contas ou reutilização de código/assets do Mr.Holmes neste extra. Resultados acima são locais: Linux, Python 3.13, CI remota e revisão independente Blue não foram executados por este executor; não se presume aprovação, push ou publicação.
 
+## Segundo extra: robustez da decodificação HTML
+
+Bloco pequeno autorizado após revisão Blue, sem nova auditoria da raiz. Segundo atualização fornecida pelo coordenador, a revisão Blue foi somente leitura, **44/44 checks**, sem achados reportáveis. O candidato de custo quadrático na decodificação de contexto fornecido pelo operador local foi suprimido como vulnerabilidade; esta mudança é de robustez, não correção de vulnerabilidade confirmada. A cobertura canônica permanece parcial e há resíduo marcado `deferredpending` (detalhes e fechamento a esclarecer pelo coordenador). Esses resultados não constituem cobertura exaustiva, aprovação final do gate, CI remota ou publicação. Este executor não executou essa revisão nem abriu outros agentes.
+
+`html._decoded` agora limita cada entrada/intermediário a **65.536 caracteres** e a **oito rodadas**, incluindo confirmação de estabilidade. Sem marcadores `%`/`&`, a prosa usa o caminho direto, sem truncamento global. Havendo marcadores, entradas excessivas ou sem estabilidade no orçamento retornam ausência, nunca um resultado parcial. No HTML mascarado, o valor renderizado inteiro é omitido, incluindo eventual prosa agregada na mesma célula; não se faz truncamento nem fallback para o texto raw potencialmente sensível. Literais percent/entity usuais estáveis continuam raw quando não escondem e-mail/controle. Decodificação simples e aninhada dentro do orçamento continua mascarando e-mails e neutralizando controles.
+
+`_safe_url` rejeita orçamento esgotado tanto em masked quanto em reveal, além do limite anterior de 8.192 caracteres. Reveal preserva o campo textual raw, escapado e com controles neutralizados, sem decodificação; isso não torna a URL rejeitada clicável. JSON e modelos permanecem completos e inalterados. Scores, serviços de rede, dependências, versão, licença, CI e arquitetura de startup não foram alterados neste segundo extra.
+
+Os dois READMEs corrigem a afirmação anterior de que demo não lê configuração: o corpo do comando offline não compõe providers nem lê/grava estado de refinamento, mas o startup normal da CLI importa configuração e chama `load_dotenv`. `PYTHON_DOTENV_DISABLED=1`, definido antes de iniciar o processo, impede a leitura de `.env`; os checks deste bloco usam esse guard. O core/startup não foi modificado.
+
+Verificação local em Windows / Python 3.11.9:
+
+- `.venv/Scripts/python.exe scripts/run_offline_tests.py -q tests/test_html_reports.py`: **76 passed in 1.03s**.
+- `.venv/Scripts/python.exe scripts/run_offline_tests.py -q`: **913 passed in 6.02s**.
+- **36 testes novos**: contagem de chamadas e soma dos caracteres processados, sem timing frágil; nesting de 64 e 4.096 camadas, fronteiras de tamanho/rodadas, e-mails/controles codificados, URLs masked/reveal, UTF-8, prosa longa comum, literais raw, modelo/JSON imutáveis, CSP e escapamento.
+- `.venv/Scripts/python.exe -m build --no-isolation`: **exit 0**, wheel/sdist `0.1.0`.
+- `.venv/Scripts/python.exe scripts/package_smoke.py`: **exit 0**, archives e wrapper real instalado offline aprovados.
+- `git diff --check`: **exit 0**, sem erros de whitespace; avisos LF/CRLF são locais.
+
+Arquivos deste bloco: `src/mailrecon/reporting/html.py`, `tests/test_html_reports.py`, `README.md`, `READMEeng.md` e este relatório. Sem commit/push pelo executor, rede real, leitura de `.env` real/credenciais/estado/relatórios reais ou testes em contas. Este limite é por valor e por chamada de decodificação, não um orçamento global de tamanho/tempo do relatório nem uma revisão de todos os regex de mascaramento. Linux, Python 3.13, CI remota e fechamento da cobertura Blue residual permanecem não verificados por este executor.
+
 ## Fontes oficiais verificadas
 
 - [GitHub REST Users](https://docs.github.com/en/rest/users/users#get-a-user).
@@ -114,8 +135,8 @@ RDAP, grafo de relações, histórico persistente e gestão de casos não foram 
 - QA de navegador desktop/mobile, filtros/reset, estado sintético, labels e ausência de recursos remotos/overflow: **repetição pós-ajuste concluída e aprovada pelo coordenador nas 12 combinações**.
 - Build/sdist/wheel e smoke de pacote em Windows: **aprovados pelo coordenador**.
 - Implementação funcional da fase 3: **aceita pelo coordenador**.
-- Revisão independente final de segurança/diff Blue: **pendente; permanece gate de publicação**.
+- Revisão Blue parcial informada pelo coordenador: **read-only, 44/44 checks, sem achados reportáveis; cobertura canônica parcial e resíduo `deferredpending`**. Fechamento final permanece gate de publicação.
 - CI remota e smoke de pacote em Linux: **pendentes de execução**.
 - Resultado Daybreak, se solicitado: **não executado**.
-- Feedback final da revisão Blue e eventuais ajustes: **a preencher após revisão**.
+- Feedback Blue: **candidato de custo local do decoder suprimido como vulnerabilidade e tratado no segundo extra de robustez**; detalhes e fechamento do resíduo a esclarecer pelo coordenador.
 - Commit/push/publicação: **responsabilidade do coordenador, ainda pendentes para a etapa 3**.

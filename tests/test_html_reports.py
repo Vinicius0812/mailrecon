@@ -1,5 +1,6 @@
 import base64
 import hashlib
+from dataclasses import asdict
 from html import unescape
 from html.parser import HTMLParser
 
@@ -11,6 +12,8 @@ from mailrecon.services.smtp_lab_service import SmtpLabValidationService
 from mailrecon.reporting.html import _Report
 from mailrecon.services.investigation_service import InvestigationService
 from mailrecon.core.models import HibpResult
+from mailrecon.reporting import html as html_report
+from mailrecon.reporting.exporters import export_json
 
 
 class Elements(HTMLParser):
@@ -180,3 +183,155 @@ def test_compact_two_column_tables_and_single_brand_title(tmp_path, locale, mode
     assert '.compact th:first-child,.compact td:first-child{width:44%}' in content
     assert 'overflow-wrap:anywhere' in content
     assert 'table{width:100%;min-width:760px' in content
+
+
+def nested_encoding(value, kind, depth):
+    for _ in range(depth):
+        value = value.replace('%', '%25') if kind == 'uri' else value.replace('&', '&amp;')
+    return value
+
+
+@pytest.mark.parametrize('kind, seed', [('uri', 'user%40example.com'), ('entity', 'user&#64;example.com')])
+@pytest.mark.parametrize('depth', [64, 4096])
+def test_decode_work_is_bounded_by_calls_and_characters(monkeypatch, kind, seed, depth):
+    value = nested_encoding(seed, kind, depth)
+    calls = {'unescape': [], 'unquote': []}
+    for name in calls:
+        original = getattr(html_report, name)
+        def measured(text, original=original, name=name):
+            calls[name].append(len(text))
+            return original(text)
+        monkeypatch.setattr(html_report, name, measured)
+    assert html_report._decoded(value) is None
+    for lengths in calls.values():
+        assert len(lengths) == html_report._DECODE_MAX_ROUNDS
+        assert max(lengths) <= html_report._DECODE_MAX_CHARS
+        assert sum(lengths) <= html_report._DECODE_MAX_ROUNDS * len(value)
+    assert _Report('en', True).s(value) == ''
+
+
+@pytest.mark.parametrize('kind, seed', [('uri', 'user%40example.com'), ('entity', 'user&#64;example.com')])
+def test_decode_round_boundary_requires_stability(kind, seed):
+    rounds = html_report._DECODE_MAX_ROUNDS
+    accepted = nested_encoding(seed, kind, rounds - 2)
+    rejected = nested_encoding(seed, kind, rounds - 1)
+    assert html_report._decoded(accepted) == 'user@example.com'
+    assert '@example.com' in unescape(_Report('en', True).s(accepted))
+    assert html_report._decoded(rejected) is None
+    assert _Report('en', True).s(rejected) == ''
+
+
+@pytest.mark.parametrize('offset', [-1, 0, 1])
+def test_decode_character_boundary_and_no_work_on_oversize(monkeypatch, offset):
+    limit = html_report._DECODE_MAX_CHARS
+    padding = ('x ' * limit)[:limit + offset - 4]
+    value = padding + ' %41'
+    calls = []
+    original = html_report.unquote
+    def measured(text):
+        calls.append(len(text))
+        return original(text)
+    monkeypatch.setattr(html_report, 'unquote', measured)
+    if offset > 0:
+        assert html_report._decoded(value) is None
+        assert not calls
+        assert _Report('pt-br', True).s(value) == ''
+        assert not calls
+    else:
+        assert html_report._decoded(value) == padding + ' A'
+        assert unescape(_Report('pt-br', True).s(value)) == value
+        assert max(calls) <= limit
+
+
+def test_decode_intermediate_size_is_also_bounded(monkeypatch):
+    monkeypatch.setattr(html_report, 'unescape', lambda text: 'x' * (html_report._DECODE_MAX_CHARS + 1))
+    monkeypatch.setattr(html_report, 'unquote', lambda text: pytest.fail('Oversize intermediate decoded'))
+    assert html_report._decoded('%41') is None
+
+
+@pytest.mark.parametrize('seed', ['user%40example.com', 'hello%1B[31m', 'hello%E2%80%AEhidden'])
+@pytest.mark.parametrize('locale', ['pt-br', 'en'])
+def test_exhausted_masked_text_never_uses_raw_or_partial(seed, locale):
+    value = nested_encoding(seed, 'uri', 64)
+    assert _Report(locale, True).s(value) == ''
+    assert unescape(_Report(locale, False).s(value)) == value
+
+
+@pytest.mark.parametrize('masked', [True, False])
+@pytest.mark.parametrize('seed', ['user%40example.com', '%1Bbad', '%E2%80%AEbad'])
+def test_exhausted_url_not_clickable_even_when_revealed(masked, seed):
+    url = 'https://example.com/?q=' + nested_encoding(seed, 'uri', 64)
+    assert _safe_url(url, masked) is None
+    rendered = _Report('en', masked).link(url)
+    assert not any(tag == 'a' for tag, attrs in Elements(rendered).elements)
+    assert rendered == '' if masked else unescape(rendered) == url
+
+
+@pytest.mark.parametrize('masked', [True, False])
+def test_url_length_boundary_remains_independent_of_decode(masked):
+    prefix = 'https://example.com/'
+    url = prefix + 'x' * (8192 - len(prefix))
+    assert _safe_url(url, masked) == url
+    assert _safe_url(url + 'x', masked) is None
+
+
+@pytest.mark.parametrize('seed', ['user%40example.com', 'hello%1B[31m', 'hello%E2%80%AEhidden'])
+def test_oversize_encoded_field_omitted_without_partial_masking(seed):
+    value = seed + 'x' * html_report._DECODE_MAX_CHARS
+    assert _Report('en', True).s(value) == ''
+    assert unescape(_Report('en', False).s(value)) == value
+
+
+def test_long_plain_prose_and_plain_email_not_globally_truncated(monkeypatch):
+    value = 'Contexto autorizado com ação e revisão. ' * 4000 + 'user@example.com'
+    monkeypatch.setattr(html_report, 'unescape', lambda text: pytest.fail('Plain prose decoded'))
+    monkeypatch.setattr(html_report, 'unquote', lambda text: pytest.fail('Plain prose decoded'))
+    rendered = unescape(_Report('pt-br', True).s(value))
+    assert rendered.startswith(value[:-len('user@example.com')])
+    assert 'user@example.com' not in rendered and '@example.com' in rendered
+    assert unescape(_Report('pt-br', False).s(value)) == value
+
+
+@pytest.mark.parametrize('value', ['ação %C3%A7', 'naïve &eacute;', '100%25', 'R&amp;D', '%2541'])
+def test_utf8_and_non_sensitive_literals_remain_raw(value):
+    assert unescape(_Report('pt-br', True).s(value)) == value
+    assert unescape(_Report('en', False).s(value)) == value
+
+
+def test_utf8_decoding_masks_email_and_neutralizes_hidden_controls():
+    value = 'ação%20user%2540example.com%20%E2%80%AE'
+    rendered = unescape(_Report('pt-br', True).s(value))
+    assert 'ação' in rendered and '@example.com' in rendered
+    assert 'user@example.com' not in rendered and '%2540' not in rendered
+    assert '\u202e' not in rendered
+    assert unescape(_Report('en', False).s(value)) == value
+
+
+@pytest.mark.parametrize('locale', ['pt-br', 'en'])
+def test_budget_exhaustion_keeps_model_json_csp_and_escaping(tmp_path, locale):
+    result = build_investigation_result()
+    value = nested_encoding('user%40example.com', 'uri', 64)
+    url = 'https://example.com/?q=' + value
+    result.query.contexts = [value]
+    result.findings.append('<script>literal</script>')
+    result.evidences[0].summary = value
+    result.evidences[0].reference = url
+    result.profile_pivots[0].profile_url = url
+    before = asdict(result)
+    json_before = export_json(result, tmp_path / 'before.json', language=locale).read_bytes()
+    masked = export_html(result, tmp_path / 'masked.html', language=locale).read_text(encoding='utf-8')
+    revealed = export_html(result, tmp_path / 'reveal.html', language=locale, mask_sensitive=False).read_text(encoding='utf-8')
+    assert value not in masked and 'user@example.com' not in masked
+    assert value in revealed and '&lt;script&gt;literal&lt;/script&gt;' in masked
+    for content in (masked, revealed):
+        elements = Elements(content).elements
+        assert not any(attrs.get('href') == url for tag, attrs in elements if tag == 'a')
+        assert not any(tag == 'img' or any(key.startswith('on') for key in attrs) for tag, attrs in elements)
+        csp = next(attrs['content'] for tag, attrs in elements if attrs.get('http-equiv') == 'Content-Security-Policy')
+        for tag in ('style', 'script'):
+            block = content.split(f'<{tag}>')[1].split(f'</{tag}>')[0]
+            digest = base64.b64encode(hashlib.sha256(block.encode('utf-8')).digest()).decode('ascii')
+            assert f"'sha256-{digest}'" in csp
+        assert "connect-src 'none'" in csp and 'unsafe-inline' not in csp
+    assert asdict(result) == before
+    assert export_json(result, tmp_path / 'after.json', language=locale).read_bytes() == json_before

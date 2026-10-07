@@ -70,13 +70,27 @@ _JS = """
 """
 
 
-def _decoded(value: str) -> str:
-    """Decode nested URI/entities for privacy checks, not for navigation."""
-    while True:
-        decoded = unquote(unescape(value))
+_DECODE_MAX_CHARS = 65536
+_DECODE_MAX_ROUNDS = 8
+
+
+def _decoded(value: str) -> str | None:
+    """Return a stable privacy view, or None when decoding cannot finish safely."""
+    if '%' not in value and '&' not in value:
+        return value
+    if len(value) > _DECODE_MAX_CHARS:
+        return None
+    for _ in range(_DECODE_MAX_ROUNDS):
+        entities = unescape(value)
+        if len(entities) > _DECODE_MAX_CHARS:
+            return None
+        decoded = unquote(entities)
+        if len(decoded) > _DECODE_MAX_CHARS:
+            return None
         if decoded == value:
             return value
         value = decoded
+    return None
 
 
 def _safe_url(value: str, masked: bool) -> str | None:
@@ -92,7 +106,7 @@ def _safe_url(value: str, masked: bool) -> str | None:
     except ValueError:
         return None
     decoded = _decoded(value)
-    if any(unicodedata.category(char) in {"Cc", "Cf"} for char in decoded) or "\\" in decoded:
+    if decoded is None or any(unicodedata.category(char) in {"Cc", "Cf"} for char in decoded) or "\\" in decoded:
         return None
     if masked and "@" in decoded:
         return None
@@ -111,6 +125,9 @@ class _Report:
         value = str(value) if value is not None else ""
         if self.masked:
             decoded = _decoded(value)
+            if decoded is None:
+                # Never expose the raw or partially decoded value after budget exhaustion.
+                return ""
             masked = _mask_text(decoded)
             if masked != decoded or _sanitize_terminal_text(decoded) != decoded:
                 value = masked
