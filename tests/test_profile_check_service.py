@@ -1,5 +1,7 @@
 import httpx
+import json
 import pytest
+from contextlib import contextmanager
 
 from mailrecon.core.models import ProfilePivot
 from mailrecon.services.profile_check_service import ProfileCheckService
@@ -49,7 +51,7 @@ def test_profile_check_service_simulates_blocked_status() -> None:
     assert updated.confidence == evidence.confidence
 
 
-def test_profile_check_service_treats_login_redirect_as_ambiguous(monkeypatch) -> None:
+def test_profile_check_service_keeps_linkedin_manual_only(monkeypatch) -> None:
     service = ProfileCheckService()
     pivot = ProfilePivot(
         platform="LinkedIn",
@@ -64,7 +66,7 @@ def test_profile_check_service_treats_login_redirect_as_ambiguous(monkeypatch) -
 
     class FakeClient:
         def __init__(self, *args, **kwargs):
-            pass
+            pytest.fail("Manual-only source must never construct a client")
 
         def __enter__(self):
             return self
@@ -83,14 +85,14 @@ def test_profile_check_service_treats_login_redirect_as_ambiguous(monkeypatch) -
 
     updated, evidence = service.check_public_profile(pivot)
 
-    assert updated.resolution_status == "ambiguous"
-    assert updated.status == "ambiguous_requires_review"
-    assert "login_search_or_challenge_redirect" in updated.ambiguity_reasons
+    assert updated.resolution_status == "not_checked"
+    assert updated.status == "manual_review"
+    assert "manual_only" in updated.ambiguity_reasons
     assert "deterministic_profile_state" in updated.missing_fields
     assert evidence.confidence == "low"
     assert evidence.decision_reasons
     assert updated.confidence == evidence.confidence
-    assert updated.confidence_scope == evidence.confidence_scope == "http_reachability"
+    assert updated.confidence_scope == evidence.confidence_scope == "generated_hypothesis"
 
 
 def make_pivot(priority: int = 90) -> ProfilePivot:
@@ -119,10 +121,13 @@ def mock_http_client(monkeypatch, *, status_code=200, final_url=None, error=None
         def __exit__(self, exc_type, exc, tb):
             return None
 
-        def get(self, url):
+        @contextmanager
+        def stream(self, method, url):
             if error is not None:
                 raise error
-            return httpx.Response(status_code, request=httpx.Request("GET", final_url or url))
+            yield httpx.Response(status_code, stream=httpx.ByteStream(json.dumps({"id": 1, "login": "user", "html_url": "https://github.com/user"}).encode()),
+                                 headers={"content-type": "application/json"},
+                                 request=httpx.Request("GET", final_url or url))
 
     monkeypatch.setattr("mailrecon.services.profile_check_service.httpx.Client", FakeClient)
 
@@ -131,7 +136,7 @@ def mock_http_client(monkeypatch, *, status_code=200, final_url=None, error=None
     ("status_code", "final_url", "resolution", "confidence", "cap"),
     [
         (200, None, "public_match_possible", "medium", 45),
-        (301, None, "public_match_possible", "medium", 45),
+        (301, None, "ambiguous", "low", 25),
         (200, "https://github.com/search?q=user", "ambiguous", "low", 25),
         (200, "https://github.com/login", "ambiguous", "low", 25),
         (404, None, "not_found", "low", 0),
@@ -151,7 +156,7 @@ def test_public_http_confidence_and_evidence_agree(
 
     assert updated.resolution_status == resolution
     assert updated.confidence == evidence.confidence == confidence
-    assert updated.confidence_scope == evidence.confidence_scope == "http_reachability"
+    assert updated.confidence_scope == evidence.confidence_scope == "public_profile_existence"
     assert updated.confidence_score == updated.review_priority_score == evidence.confidence_score == cap
     assert updated.evidence_strength == evidence.evidence_strength
     assert evidence.sources == ["public_profile_pivot", "GitHub"]
@@ -178,9 +183,9 @@ def test_http_exception_resets_stale_confidence_and_observations(monkeypatch, er
 
     assert updated.resolution_status == resolution
     assert updated.confidence == evidence.confidence == "low"
-    assert updated.confidence_scope == evidence.confidence_scope == "http_reachability"
+    assert updated.confidence_scope == evidence.confidence_scope == "public_profile_existence"
     assert updated.confidence_score == updated.review_priority_score == evidence.confidence_score == 20
-    assert updated.evidence_strength == evidence.evidence_strength == "weak_public_http"
+    assert updated.evidence_strength == evidence.evidence_strength == "none"
     assert updated.http_status_code is None
     assert updated.final_url is None
     assert updated.matched_fields == []

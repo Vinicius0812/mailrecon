@@ -25,16 +25,16 @@ class StaticReconService:
         self.dns = dns
         self.hibp_status = hibp_status
 
-    def analyze_email(self, email: str, progress_callback=None) -> ReconResult:
+    def analyze_email(self, email: str, progress_callback=None, *, use_hibp=True) -> ReconResult:
         return ReconResult(
             email=email,
             domain=email.rsplit("@", 1)[1],
             is_valid=True,
             dns=self.dns,
             hibp=HibpResult(
-                queried=True,
-                status=self.hibp_status,
-                breaches=[{"Name": "ExampleBreach"}] if self.hibp_status == "breaches_found" else [],
+                queried=use_hibp,
+                status=self.hibp_status if use_hibp else "disabled",
+                breaches=[{"Name": "ExampleBreach"}] if use_hibp and self.hibp_status == "breaches_found" else [],
             ),
         )
 
@@ -202,7 +202,8 @@ def test_profile_breakdown_uses_only_performed_real_checks_including_after_fifth
     checked = replace(
         pivots[-1],
         checked_at="2026-09-30T00:00:00+00:00",
-        confidence_scope="http_reachability",
+        confidence_scope="public_profile_existence",
+        check_method="official_public_api",
         resolution_status="public_match_possible",
         confidence_score=0,
         review_priority_score=0,

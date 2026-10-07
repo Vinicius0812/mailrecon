@@ -42,6 +42,7 @@ class FakeInvestigationService:
         check_public_profiles: bool = False,
         lab_profile_scenario: str | None = None,
         progress_callback=None,
+        *, excluded_profile_urls=None,
     ) -> InvestigationResult:
         if progress_callback is not None:
             progress_callback("Building candidate emails...")
@@ -100,6 +101,9 @@ class FakeInvestigationService:
 
 
 class FakeRefinementStateService:
+    def excluded_links_for_query(self, query):
+        return set()
+
     def apply_and_store(
         self,
         query: InvestigationInput,
@@ -383,6 +387,7 @@ def test_cli_investigate_handles_invalid_input(monkeypatch) -> None:
             check_public_profiles: bool = False,
             lab_profile_scenario: str | None = None,
             progress_callback=None,
+            *, excluded_profile_urls=None,
         ) -> InvestigationResult:
             raise ValueError("Provide at least one seed.")
 

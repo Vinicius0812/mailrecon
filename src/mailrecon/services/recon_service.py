@@ -3,7 +3,7 @@
 from typing import Callable
 
 from mailrecon.core.i18n import msg
-from mailrecon.core.models import EmailTechnicalAssessment, ReconResult
+from mailrecon.core.models import EmailTechnicalAssessment, HibpResult, ReconResult
 from mailrecon.core.validators import validate_email_input
 from mailrecon.services.dns_service import DnsService
 from mailrecon.services.hibp_service import HibpService
@@ -44,6 +44,7 @@ class ReconService:
         self,
         email: str,
         progress_callback: Callable[[str], None] | None = None,
+        *, use_hibp: bool = True,
     ) -> ReconResult:
         """Run the main analysis flow for one email address."""
         self._notify(progress_callback, msg("recon.progress.validate"))
@@ -53,8 +54,11 @@ class ReconService:
 
         self._notify(progress_callback, msg("recon.progress.dns", domain=domain))
         dns_result = self.dns_service.lookup_domain(domain)
-        self._notify(progress_callback, msg("recon.progress.hibp", email=normalized_or_error))
-        hibp_result = self.hibp_service.query_breaches(normalized_or_error)
+        if use_hibp:
+            self._notify(progress_callback, msg("recon.progress.hibp", email=normalized_or_error))
+            hibp_result = self.hibp_service.query_breaches(normalized_or_error)
+        else:
+            hibp_result = HibpResult(queried=False, status="disabled")
         technical_assessment = self._build_technical_assessment(
             email=normalized_or_error,
             dns_result=dns_result,

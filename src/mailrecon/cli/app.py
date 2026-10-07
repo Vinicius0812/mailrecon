@@ -69,7 +69,14 @@ def _build_investigation_service(use_hibp: bool) -> InvestigationService:
     """Compose the services required by the investigation command."""
     settings = load_settings()
     dns_service = DnsService(timeout=settings.dns_timeout)
-    profile_check_service = ProfileCheckService(timeout=settings.http_timeout)
+    profile_check_service = ProfileCheckService(
+        timeout=settings.http_timeout,
+        total_budget=settings.profile_total_budget,
+        source_budget=settings.profile_source_budget,
+        max_response_bytes=settings.profile_max_response_bytes,
+        cache_ttl=settings.profile_cache_ttl,
+        cache_entries=settings.profile_cache_entries,
+    )
     hibp_service = HibpService(
         api_key=settings.hibp_api_key,
         timeout=settings.http_timeout,
@@ -119,6 +126,7 @@ def _run_investigation(
             check_public_profiles=check_public_profiles,
             lab_profile_scenario=lab_profile_scenario,
             progress_callback=_show_progress,
+            excluded_profile_urls=refinement_state_service.excluded_links_for_query(query),
         )
         result = refinement_state_service.apply_and_store(
             query,
@@ -558,6 +566,7 @@ def lab_smtp_validate(
 
 @app.command("rerun-last", cls=LocalizedCommand)
 def rerun_last(
+    no_hibp: bool = typer.Option(False, "--no-hibp", help="Skip the optional HIBP lookup."),
     json_out: Path | None = typer.Option(
         None,
         "--json-out",
@@ -591,7 +600,7 @@ def rerun_last(
     typer.secho(text("cli.reload"), fg=typer.colors.CYAN)
     _run_investigation(
         query=query,
-        use_hibp=bool(run_options.get("use_hibp", True)),
+        use_hibp=not no_hibp and bool(run_options.get("use_hibp", True)),
         check_public_profiles=bool(run_options.get("check_public_profiles", False)),
         lab_profile_scenario=_coerce_optional_string(run_options.get("lab_profile_scenario")),
         json_out=json_out,

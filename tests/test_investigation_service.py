@@ -3,9 +3,11 @@ from mailrecon.services.investigation_service import InvestigationService
 
 
 class FakeReconService:
-    def analyze_email(self, email: str, progress_callback=None) -> ReconResult:
+    def analyze_email(self, email: str, progress_callback=None, *, use_hibp=True) -> ReconResult:
         domain = email.rsplit("@", maxsplit=1)[1]
         hibp_status = "breaches_found" if email.startswith("alice") else "no_breaches"
+        if not use_hibp:
+            hibp_status = "disabled"
         breaches = [{"Name": "ExampleBreach", "Title": "Example Breach"}] if hibp_status == "breaches_found" else []
         return ReconResult(
             email=email,
@@ -17,7 +19,7 @@ class FakeReconService:
                 mx_records=["mx.example.com"],
             ),
             hibp=HibpResult(
-                queried=True,
+                queried=use_hibp,
                 status=hibp_status,
                 breaches=breaches,
             ),

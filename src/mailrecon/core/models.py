@@ -110,6 +110,9 @@ class EvidenceRecord:
     limitations: list[str] = field(default_factory=list)
     confidence_scope: str = "unspecified"
     sources: list[str] = field(default_factory=list)
+    rule_id: str | None = None
+    rule_version: str | None = None
+    cache_hit: bool = False
 
 
 @dataclass(slots=True)
@@ -165,6 +168,10 @@ class ProfilePivot:
     limitations: list[str] = field(default_factory=list)
     confidence_scope: str = "generated_hypothesis"
     sources: list[str] = field(default_factory=list)
+    rule_id: str | None = None
+    rule_version: str | None = None
+    check_method: str | None = None
+    cache_hit: bool = False
 
 
 @dataclass(slots=True)

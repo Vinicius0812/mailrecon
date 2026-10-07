@@ -76,7 +76,17 @@ mailrecon --language en rerun-last
 
 O Markdown herda o idioma do terminal. `--markdown-language pt-br|en` altera apenas o relatório e está disponível em todos os comandos com exportação Markdown. No interativo em português, use `s`/`sim` ou `n`/`não`/`nao`; em inglês, `y`/`yes` ou `n`/`no`. Enter aplica o padrão anunciado.
 
-`rerun-last` reutiliza as opções salvas, inclusive HIBP; não aceita uma nova flag `--no-hibp`. `--check-public-profiles` faz checagens HTTP públicas opcionais. Bloqueio, login, limite de requisições ou erro não provam ausência de uma conta.
+`rerun-last` reutiliza as opções salvas, inclusive HIBP; `rerun-last --no-hibp` pode desabilitar HIBP, nunca habilitá-lo se estava desabilitado. `--check-public-profiles` faz checagens opcionais somente nas duas APIs oficiais descritas abaixo. Bloqueio, login, limite de requisições ou erro não provam ausência de uma conta.
+
+### Catálogo e rede de perfis
+
+O catálogo tipado e validado é próprio do MailRecon. GitHub usa `GET https://api.github.com/users/{handle}` ([documentação oficial](https://docs.github.com/en/rest/users/users#get-a-user)); GitLab usa `GET https://gitlab.com/api/v4/users?username={handle}` ([documentação oficial](https://docs.gitlab.com/api/users/)). Apenas o usuário exato fornecido/derivado é consultado: sem busca por e-mail, listagem geral ou paginação. LinkedIn, Instagram, Facebook, X, Spotify, Telegram e Gravatar permanecem pivôs manuais, sem HTTP automático. URLs de busca são sugestões manuais, nunca consultadas pelo verificador.
+
+Os pedidos não têm autenticação, cookies persistentes, proxies do ambiente, rotação de User-Agent, retries ou redirecionamentos automáticos. O User-Agent é `MailRecon/0.1`. Origem, usuário e URL canônica do pivô são validados antes de rede; o endpoint é construído exclusivamente pelo catálogo. A leitura por streaming limita bytes; respostas comprimidas inesperadas são inconclusivas. Orçamentos limitam pedidos por investigação e por fonte; 401/403/429 desabilitam essa fonte até a próxima execução. Limites esgotados e fontes manuais permanecem `not_checked`.
+
+HTTP 200 exige JSON esperado, ID inteiro positivo, usuário exatamente correspondente pela semântica case-insensitive de GitHub/GitLab e URL oficial canônica correspondente. Apenas o handle é comparado com `casefold`; a URL deve ser exatamente a construída pelo catálogo com o handle retornado validado, sem relaxar host, path, encoding, query ou fragmento. HTML, soft-404/login, corpo genérico/malformado ou divergente são `ambiguous`, nunca evidência positiva. GitLab com array vazio é `not_found`; múltiplos registros são ambíguos. 404 de GitHub é ausência de perfil público retornado, não prova de inexistência de conta; 404 de GitLab é inconclusivo. `rule_id`, `rule_version`, `check_method` e `cache_hit` permitem rastrear a regra.
+
+O cache é limitado, apenas em memória e por instância do serviço, não persistente. Guarda somente classificação sanitizada de resultados positivos/negativos, sem corpo bruto, e expira por TTL monotônico. Reuso não consome orçamento nem renova o TTL; `checked_at` e `collected_at` conservam a hora da observação original. Cada investigação reseta orçamento/bloqueios, mas pode reutilizar o cache vivo da mesma instância; novos processos não compartilham cache. TTL ou capacidade zero desabilita cache.
 
 ## Confiança e proveniência
 
@@ -91,7 +101,7 @@ A deduplicação mantém a origem principal em `source`, nesta ordem:
 
 `confidence_scope` identifica a afirmação avaliada. Entrada direta ou explícita tem confiança `medium` (média) na informação fornecida; inferências têm `low` (baixa) na hipótese. Formato inválido, NXDOMAIN e Null MX recebem baixa. DNS não eleva confiança de identidade.
 
-Página alcançável tem confiança média apenas no alcance HTTP, não na titularidade ou correspondência com o e-mail. Não verificado, ambíguo, bloqueado, ausente ou com erro ficam com baixa. Simulações têm escopo sintético e não observam uma plataforma real.
+Perfil público confirmado pela regra de API tem confiança média apenas em `public_profile_existence`, não na titularidade ou correspondência com o e-mail. Sucesso HTTP genérico nunca recebe média. Não verificado, ambíguo, bloqueado, ausente ou com erro ficam com baixa. Simulações têm escopo sintético e não observam uma plataforma real; não entram no breakdown real. Correlação de identidade permanece zero.
 
 HIBP tem confiança média no registro de exposição apenas em `breaches_found`. Consulta desabilitada, chave ausente, negativa ou falha recebem baixa. Ausência de vazamentos conhecidos não prova segurança, inatividade ou inexistência.
 
@@ -102,6 +112,8 @@ O detalhamento usa regras independentes para formato validado, observação DNS 
 ## Refinamento e privacidade
 
 O estado fica em `.mailrecon-temp/last-investigation-refinement.json`. Adicione URLs refutadas manualmente a `excluded_profile_urls` e rode `mailrecon rerun-last`. Estados antigos continuam legíveis; a nova execução aplica o idioma selecionado.
+
+Exclusões só são aplicadas quando o fingerprint corresponde à consulta e são filtradas antes das checagens de perfil, inclusive antes do cache. O estado nunca fornece destinos de HTTP: URLs sugeridas/arbitrárias do arquivo não criam pivôs; os destinos vêm apenas do catálogo. Candidatos inferidos por nome/usuário não são enviados ao HIBP por padrão; entradas diretas e candidatos explicitamente fornecidos mantêm a política atual. O serviço oferece `allow_inferred_hibp=True` somente para um escopo explicitamente autorizado, sem mutar o provider global. `ReconService.analyze_email(..., use_hibp=False)` omite o provider para uma chamada.
 
 **JSON e estado de refinamento contêm dados completos**, inclusive e-mails, nomes, contextos e URLs. Mascaramento não anonimiza esses arquivos. Não publique relatórios reais, chaves ou estados locais. Restrinja acesso e retenção conforme o escopo autorizado. `--reveal-emails` revela e-mails na análise/investigação; saídas humanas de SMTP também são mascaradas, mas seu JSON mantém o endereço informado.
 
@@ -142,6 +154,15 @@ Veja [.env.example](.env.example).
 | `MAILRECON_ENABLE_LAB_SMTP` | `0` | Habilitação de SMTP com rede |
 | `MAILRECON_LAB_SMTP_ALLOW_HOSTS` | vazio | Hosts permitidos do laboratório |
 | `MAILRECON_LAB_SMTP_TIMEOUT` | `3.0` | Limite SMTP, em segundos |
+| `MAILRECON_PROFILE_TOTAL_BUDGET` | `20` | Pedidos de API por investigação, 0 a 100 |
+| `MAILRECON_PROFILE_SOURCE_BUDGET` | `10` | Pedidos por fonte/execução, 0 a 50 |
+| `MAILRECON_PROFILE_MAX_RESPONSE_BYTES` | `65536` | Bytes por resposta, 1024 a 1048576 |
+| `MAILRECON_PROFILE_CACHE_TTL` | `60` | TTL em segundos, 0 a 300 |
+| `MAILRECON_PROFILE_CACHE_ENTRIES` | `128` | Entradas em memória, 0 a 512 |
+
+Limites devem ser inteiros dentro dos intervalos; valores inválidos usam o padrão. Orçamento zero desabilita novos pedidos de API. O timeout HTTP para perfis é limitado a 60 segundos, com fallback de 10 segundos para valor inválido.
+
+Além do timeout por operação HTTP, há deadline monotônico da resposta inteira com o mesmo valor, contando conexão/headers e verificado em cada chunk bruto sem agregação e antes de classificar o corpo. Expiração interrompe a coleta, fecha a resposta e não cria cache. Em I/O síncrono, uma leitura já bloqueada só pode retornar pelo timeout de operação; o deadline não interrompe uma chamada bloqueada no sistema operacional.
 
 ## Arquitetura e testes
 

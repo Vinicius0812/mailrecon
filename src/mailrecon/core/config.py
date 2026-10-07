@@ -19,6 +19,11 @@ class Settings:
     enable_lab_smtp: bool = False
     lab_smtp_allow_hosts: list[str] = field(default_factory=list)
     lab_smtp_timeout: float = 3.0
+    profile_total_budget: int = 20
+    profile_source_budget: int = 10
+    profile_max_response_bytes: int = 65536
+    profile_cache_ttl: int = 60
+    profile_cache_entries: int = 128
 
 
 def _get_float_env(name: str, default: float) -> float:
@@ -46,6 +51,15 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def bounded_int(value: object, default: int, minimum: int, maximum: int) -> int:
+    """Reject invalid limits rather than silently allowing unbounded work."""
+    try:
+        parsed = int(str(value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if minimum <= parsed <= maximum else default
+
+
 def _get_csv_env(name: str) -> list[str]:
     """Read a comma-separated environment variable as a clean list."""
     raw_value = os.getenv(name)
@@ -69,4 +83,9 @@ def load_settings() -> Settings:
         enable_lab_smtp=enable_lab_smtp,
         lab_smtp_allow_hosts=lab_smtp_allow_hosts,
         lab_smtp_timeout=lab_smtp_timeout,
+        profile_total_budget=bounded_int(os.getenv("MAILRECON_PROFILE_TOTAL_BUDGET"), 20, 0, 100),
+        profile_source_budget=bounded_int(os.getenv("MAILRECON_PROFILE_SOURCE_BUDGET"), 10, 0, 50),
+        profile_max_response_bytes=bounded_int(os.getenv("MAILRECON_PROFILE_MAX_RESPONSE_BYTES"), 65536, 1024, 1048576),
+        profile_cache_ttl=bounded_int(os.getenv("MAILRECON_PROFILE_CACHE_TTL"), 60, 0, 300),
+        profile_cache_entries=bounded_int(os.getenv("MAILRECON_PROFILE_CACHE_ENTRIES"), 128, 0, 512),
     )

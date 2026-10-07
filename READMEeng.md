@@ -76,7 +76,17 @@ mailrecon --language en rerun-last
 
 Markdown inherits the terminal language. `--markdown-language pt-br|en` overrides only the report and is available on all commands with Markdown export. Portuguese prompts accept `s`/`sim` and `n`/`não`/`nao`; English prompts accept `y`/`yes` and `n`/`no`. Enter uses the displayed default.
 
-`rerun-last` reuses saved options, including HIBP, and does not accept a new `--no-hibp` flag. `--check-public-profiles` optionally checks public HTTP pages. Blocks, login redirects, rate limits, and errors do not establish account absence.
+`rerun-last` reuses saved options, including HIBP; `rerun-last --no-hibp` can disable HIBP but never enable it if it was already disabled. `--check-public-profiles` optionally checks only the two official APIs below. Blocks, login redirects, rate limits, and errors do not establish account absence.
+
+### Profile catalog and network
+
+The typed, validated catalog belongs to MailRecon. GitHub uses `GET https://api.github.com/users/{handle}` ([official documentation](https://docs.github.com/en/rest/users/users#get-a-user)); GitLab uses `GET https://gitlab.com/api/v4/users?username={handle}` ([official documentation](https://docs.gitlab.com/api/users/)). Only an exact provided/derived username is queried: no email search, general listing, or pagination. LinkedIn, Instagram, Facebook, X, Spotify, Telegram, and Gravatar remain manual pivots without automatic HTTP. Search URLs are manual suggestions, never queried by the checker.
+
+Requests have no authentication, persistent cookies, environment proxies, rotating User-Agent, retries, or automatic redirects. The User-Agent is `MailRecon/0.1`. Pivot origin, handle, and canonical URL are validated before network; endpoints come exclusively from the catalog. Streaming bounds bytes; unexpected compressed responses are inconclusive. Budgets bound requests per investigation/source; 401/403/429 disable that source until the next execution. Exhausted budgets and manual sources remain `not_checked`.
+
+HTTP 200 requires expected JSON, a positive integer ID, an exactly matching handle under GitHub/GitLab case-insensitive semantics, and matching official canonical URL. Only the handle is compared with `casefold`; the URL must exactly match the catalog URL built from the validated returned handle, without relaxing host, path, encoding, query, or fragment. HTML, soft-404/login pages, generic/malformed or divergent bodies are `ambiguous`, never positive evidence. An empty GitLab array is `not_found`; multiple records are ambiguous. GitHub 404 means no public profile was returned, not proof of account absence; GitLab 404 is inconclusive. `rule_id`, `rule_version`, `check_method`, and `cache_hit` make rules traceable.
+
+The cache is bounded, in memory only, per service instance, and not persistent. It stores only sanitized positive/negative classifications without raw bodies and expires by monotonic TTL. Reuse consumes no request budget and does not renew TTL; `checked_at` and `collected_at` keep the original observation time. Each investigation resets budgets/blocks but can reuse the same instance's live cache; new processes share no cache. Zero TTL/capacity disables caching.
 
 ## Confidence and Provenance
 
@@ -91,7 +101,7 @@ Deduplication retains the primary origin in `source`, in this order:
 
 `confidence_scope` identifies the evaluated claim. Direct or explicit inputs receive `medium` confidence in the supplied information; inferences receive `low` confidence in the hypothesis. Invalid format, NXDOMAIN, and Null MX receive low confidence. DNS never increases identity confidence.
 
-A reachable page receives medium confidence only in HTTP reachability, not ownership or a match to the email. Unchecked, ambiguous, blocked, absent, or erroneous results remain low. Simulations have a synthetic scope and do not observe a real platform.
+A public profile confirmed by an API rule receives medium confidence only in `public_profile_existence`, not ownership or a match to the email. Generic HTTP success never receives medium confidence. Unchecked, ambiguous, blocked, absent, or erroneous results remain low. Simulations have a synthetic scope, observe no real platform, and do not count toward the real breakdown. Identity correlation stays zero.
 
 HIBP receives medium confidence in an exposure record only for `breaches_found`. Disabled queries, missing keys, negative responses, and failures receive low confidence. No known breaches does not prove safety, inactivity, or nonexistence.
 
@@ -102,6 +112,8 @@ The breakdown uses independent rules for validated syntax, DNS observations, and
 ## Refinement and Privacy
 
 State is stored in `.mailrecon-temp/last-investigation-refinement.json`. Add manually disproved URLs to `excluded_profile_urls`, then run `mailrecon rerun-last`. Older state remains readable; the next run uses its selected language.
+
+Exclusions apply only when the fingerprint matches the query and are filtered before profile checks, including cache lookups. State never supplies HTTP destinations: suggested/arbitrary URLs in that file cannot create pivots; targets come only from the catalog. Name/username-inferred candidates are not sent to HIBP by default; direct seeds and explicitly provided candidates keep the current policy. The service offers `allow_inferred_hibp=True` only for an explicitly authorized scope, without mutating the global provider. `ReconService.analyze_email(..., use_hibp=False)` omits the provider for one call.
 
 **JSON and refinement state contain complete data**, including emails, names, context, and URLs. Masking does not anonymize these files. Never publish real reports, keys, or local state. Restrict access and retention to the authorized scope. `--reveal-emails` reveals addresses in analysis/investigation output; SMTP human-readable output is also masked, but its JSON retains the supplied address.
 
@@ -142,6 +154,15 @@ See [.env.example](.env.example).
 | `MAILRECON_ENABLE_LAB_SMTP` | `0` | Enable networked SMTP |
 | `MAILRECON_LAB_SMTP_ALLOW_HOSTS` | empty | Allowed lab hosts |
 | `MAILRECON_LAB_SMTP_TIMEOUT` | `3.0` | SMTP timeout in seconds |
+| `MAILRECON_PROFILE_TOTAL_BUDGET` | `20` | API requests per investigation, 0 to 100 |
+| `MAILRECON_PROFILE_SOURCE_BUDGET` | `10` | Requests per source/execution, 0 to 50 |
+| `MAILRECON_PROFILE_MAX_RESPONSE_BYTES` | `65536` | Bytes per response, 1024 to 1048576 |
+| `MAILRECON_PROFILE_CACHE_TTL` | `60` | TTL seconds, 0 to 300 |
+| `MAILRECON_PROFILE_CACHE_ENTRIES` | `128` | In-memory entries, 0 to 512 |
+
+Limits must be integers within these ranges; invalid values use the default. Zero request budget disables new API requests. Profile HTTP timeout is bounded to 60 seconds, with a 10-second fallback for invalid values.
+
+In addition to the per-operation HTTP timeout, the same value sets a monotonic whole-response deadline, including connection/headers, checked on every unaggregated raw chunk and before classifying the body. Expiry stops collection, closes the response, and creates no cache. With synchronous I/O, an already blocked read can return only through the operation timeout; the deadline does not interrupt a blocked operating-system call.
 
 ## Architecture and Tests
 

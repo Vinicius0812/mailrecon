@@ -66,6 +66,10 @@ class RefinementStateService:
             return set()
         return {link for link in raw_links if isinstance(link, str) and link.strip()}
 
+    def excluded_links_for_query(self, query: InvestigationInput) -> set[str]:
+        """Read only exclusions belonging to this query, never executable URLs."""
+        return self._load_excluded_links(self._fingerprint_query(query))
+
     def _write_state(
         self,
         query_fingerprint: str,

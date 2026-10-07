@@ -1,4 +1,5 @@
 import ast
+from contextlib import contextmanager
 from dataclasses import asdict, fields, is_dataclass
 import json
 from pathlib import Path
@@ -67,6 +68,16 @@ def offline_service(monkeypatch):
             elif "t.me" in url:
                 status = 429
             return httpx.Response(status, request=httpx.Request("GET", url))
+
+        @contextmanager
+        def stream(self, method, url):
+            calls.append(url)
+            if "api.github.com" in url:
+                yield httpx.Response(200, stream=httpx.ByteStream(json.dumps({"id": 1, "login": "alice", "html_url": "https://github.com/alice"}).encode()),
+                                     headers={"content-type": "application/json"},
+                                     request=httpx.Request(method, url))
+            else:
+                yield httpx.Response(403, request=httpx.Request(method, url))
 
     monkeypatch.setattr(DnsService, "_build_resolver", lambda self: Resolver())
     monkeypatch.setattr(httpx, "Client", Client)
@@ -172,15 +183,13 @@ def test_full_real_result_localizes_without_repeating_collection(offline_service
         assert all("Simulated" in str(item.summary) for item in result.evidences if item.category == "public_profile")
     else:
         assert {pivot.resolution_status for pivot in localized.profile_pivots} == {
-            "public_match_possible", "ambiguous", "blocked_by_platform", "not_found",
-            "rate_limited", "request_error", "timeout",
+            "public_match_possible", "blocked_by_platform", "not_checked",
         }
-        error_pivot = next(item for item in localized.profile_pivots if item.resolution_status == "request_error")
-        assert error_pivot.notes[-1] == t("profile.error.request", language, error=RAW_ERROR)
-        assert error_pivot.confidence == "low"
+        blocked_pivot = next(item for item in localized.profile_pivots if item.resolution_status == "blocked_by_platform")
+        assert blocked_pivot.confidence == "low"
         reachable = next(item for item in localized.profile_pivots if item.resolution_status == "public_match_possible")
         assert reachable.confidence == "medium"
-        assert reachable.confidence_scope == "http_reachability"
+        assert reachable.confidence_scope == "public_profile_existence"
         assert t("profile.limitation.ownership", language) in reachable.limitations
 
 

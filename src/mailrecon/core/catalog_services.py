@@ -5,6 +5,23 @@ technical identifiers, and upstream details verbatim in both languages.
 """
 
 CATALOG = {
+    "profile.api.reason": {"en": "Public profile rule: {reason}", "pt-br": "Regra de perfil público: {reason}"},
+    "profile.api.invalid_pivot": {"en": "Pivot origin, handle, or canonical URL is invalid; no request was sent.", "pt-br": "Origem, usuário ou URL canônica do pivô inválidos; nenhuma consulta foi enviada."},
+    "profile.api.manual_only": {"en": "Manual-only source; no HTTP request was sent.", "pt-br": "Fonte apenas manual; nenhuma consulta HTTP foi enviada."},
+    "profile.api.source_disabled": {"en": "Source disabled for this execution after a block or rate limit.", "pt-br": "Fonte desabilitada nesta execução após bloqueio ou limite de consultas."},
+    "profile.api.budget_exhausted": {"en": "Request budget exhausted; profile was not checked.", "pt-br": "Orçamento de consultas esgotado; o perfil não foi verificado."},
+    "profile.api.unexpected_response_url": {"en": "Unexpected response URL; profile state is inconclusive.", "pt-br": "URL de resposta inesperada; estado do perfil inconclusivo."},
+    "profile.api.blocked_by_platform": {"en": "API access blocked; public profile state cannot be determined.", "pt-br": "Acesso à API bloqueado; não é possível determinar o estado do perfil público."},
+    "profile.api.rate_limited": {"en": "API rate limit reached; public profile state cannot be determined.", "pt-br": "Limite de consultas da API atingido; não é possível determinar o estado do perfil público."},
+    "profile.api.not_found": {"en": "No public profile was returned by the exact-username endpoint; this does not prove account absence.", "pt-br": "O endpoint de usuário exato não retornou perfil público; isso não prova ausência de conta."},
+    "profile.api.unexpected_http_status": {"en": "Unexpected HTTP status or redirect; no redirect was followed.", "pt-br": "Status HTTP inesperado ou redirecionamento; nenhum redirecionamento foi seguido."},
+    "profile.api.invalid_payload": {"en": "Generic, malformed, divergent, or noncanonical response; no profile was confirmed.", "pt-br": "Resposta genérica, malformada, divergente ou não canônica; nenhum perfil foi confirmado."},
+    "profile.api.response_too_large": {"en": "Response exceeded the byte limit; collection stopped and result is inconclusive.", "pt-br": "Resposta excedeu o limite de bytes; coleta interrompida e resultado inconclusivo."},
+    "profile.api.verified_public_profile": {"en": "Official API returned a valid public profile ID, exact handle, and canonical URL; identity ownership is unverified.", "pt-br": "API oficial retornou ID de perfil público válido, usuário exato e URL canônica; titularidade da identidade não verificada."},
+    "profile.api.timeout": {"en": "API request timed out; no retry was attempted.", "pt-br": "Consulta à API atingiu o tempo limite; nenhuma repetição foi tentada."},
+    "profile.api.request_error": {"en": "API request failed; no retry or upstream private response was retained.", "pt-br": "Consulta à API falhou; não houve repetição nem retenção de resposta privada externa."},
+    "profile.api.synthetic": {"en": "Synthetic lab scenario, not a real public API observation.", "pt-br": "Cenário sintético de laboratório, não uma observação real de API pública."},
+    "profile.api.cache": {"en": "Reused sanitized in-memory observation within TTL; checked_at retains the original observation time.", "pt-br": "Observação sanitizada reutilizada em memória dentro do TTL; checked_at mantém o horário da observação original."},
     "i18n.error.language": {"en": "Unsupported language: {requested_language}. Choose pt-br or en.", "pt-br": "Idioma não suportado: {requested_language}. Escolha pt-br ou en."},
     "validation.email.invalid": {"en": "{detail}", "pt-br": "Endereço de e-mail inválido: {detail}"},
     "validation.email.missing_at": {"en": "An email address must have an @-sign.", "pt-br": "Um endereço de e-mail deve conter o sinal @."},

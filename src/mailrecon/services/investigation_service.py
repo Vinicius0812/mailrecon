@@ -8,6 +8,7 @@ import re
 from typing import Callable
 
 from mailrecon.core.i18n import msg
+from mailrecon.core.platform_catalog import PLATFORMS
 from mailrecon.core.models import (
     EmailCandidate,
     EvidenceRecord,
@@ -77,16 +78,21 @@ class InvestigationService:
         check_public_profiles: bool = False,
         lab_profile_scenario: str | None = None,
         progress_callback: Callable[[str], None] | None = None,
+        *, excluded_profile_urls: set[str] | None = None,
+        allow_inferred_hibp: bool = False,
     ) -> InvestigationResult:
         """Run a structured OSINT investigation using safe public signals."""
         self._notify(progress_callback, msg("investigation.progress.seeds"))
         self._ensure_useful_query(query)
+        self.profile_check_service.begin_execution()
 
         evidences = self._build_seed_evidences(query)
         self._notify(progress_callback, msg("investigation.progress.candidates"))
         candidate_emails = self._build_candidate_emails(query)
         self._notify(progress_callback, msg("investigation.progress.pivots"))
         profile_pivots = self._build_profile_pivots(query, candidate_emails)
+        profile_pivots = [pivot for pivot in profile_pivots
+                          if pivot.profile_url not in (excluded_profile_urls or set())]
         findings: list[str] = []
         risks: list[str] = []
         pivot_suggestions: list[str] = []
@@ -106,6 +112,7 @@ class InvestigationService:
             analysis = self.recon_service.analyze_email(
                 candidate.email,
                 progress_callback=progress_callback,
+                use_hibp=allow_inferred_hibp or candidate.source in {"seed_email", "provided_candidate"},
             )
             candidate.analysis = analysis
             self._apply_technical_assessment_to_candidate(candidate)
@@ -742,55 +749,14 @@ class InvestigationService:
 
     def _platform_pivots_for_handle(self, handle: str) -> list[ProfilePivot]:
         """Create public-profile pivot suggestions for a single handle."""
-        platform_specs = [
-            (
-                "LinkedIn",
-                f"https://www.linkedin.com/in/{handle}/",
-                f"https://www.google.com/search?q=site%3Alinkedin.com%2Fin+%22{handle}%22",
-            ),
-            (
-                "Instagram",
-                f"https://www.instagram.com/{handle}/",
-                f"https://www.google.com/search?q=site%3Ainstagram.com+%22{handle}%22",
-            ),
-            (
-                "Facebook",
-                f"https://www.facebook.com/{handle}",
-                f"https://www.google.com/search?q=site%3Afacebook.com+%22{handle}%22",
-            ),
-            (
-                "GitHub",
-                f"https://github.com/{handle}",
-                f"https://www.google.com/search?q=site%3Agithub.com+%22{handle}%22",
-            ),
-            (
-                "X",
-                f"https://x.com/{handle}",
-                f"https://www.google.com/search?q=site%3Ax.com+%22{handle}%22",
-            ),
-            (
-                "Spotify",
-                f"https://open.spotify.com/search/{handle}",
-                f"https://www.google.com/search?q=site%3Aopen.spotify.com+%22{handle}%22",
-            ),
-            (
-                "Telegram",
-                f"https://t.me/{handle}",
-                f"https://www.google.com/search?q=site%3At.me+%22{handle}%22",
-            ),
-            (
-                "Gravatar",
-                f"https://gravatar.com/{handle}",
-                f"https://www.google.com/search?q=site%3Agravatar.com+%22{handle}%22",
-            ),
-        ]
-
         return [
             ProfilePivot(
-                platform=platform,
+                platform=spec.name,
                 handle=handle,
-                profile_url=profile_url,
-                search_url=search_url,
+                profile_url=spec.profile_url(handle),
+                search_url=spec.search_url(handle),
+                rule_id=spec.rule_id,
+                rule_version=spec.rule_version,
                 source="public_profile_pivot",
                 confidence="low",
                 confidence_score=self._score_profile_pivot(handle),
@@ -810,7 +776,7 @@ class InvestigationService:
                     msg("investigation.note.correlation"),
                 ],
             )
-            for platform, profile_url, search_url in platform_specs
+            for spec in PLATFORMS
         ]
 
     def _normalize_handle(self, handle: str) -> str:
@@ -913,7 +879,8 @@ class InvestigationService:
             for pivot in profile_pivots
             if pivot.checked_at is not None
             and pivot.resolution_status != "not_checked"
-            and pivot.confidence_scope == "http_reachability"
+            and pivot.confidence_scope == "public_profile_existence"
+            and pivot.check_method == "official_public_api"
         ]
 
         return {
