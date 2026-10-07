@@ -607,6 +607,7 @@ class InvestigationService:
                 reference="https://haveibeenpwned.com/API/v3#BreachesForAccount",
                 collected_at=collected_at,
                 method="hibp_breach_query",
+                collection_performed=analysis.hibp.queried,
                 confidence="medium" if analysis.hibp.status == "breaches_found" else "low",
                 confidence_score=self._score_hibp_evidence(analysis.hibp.status),
                 confidence_scope="breach_exposure",

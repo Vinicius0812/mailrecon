@@ -9,6 +9,7 @@ from mailrecon.cli.localization import (
     LocalizedCommand, LocalizedGroup, confirm, language,
     markdown_language as resolve_markdown_language, text,
 )
+from mailrecon.cli.offline import register_offline_commands
 from mailrecon.core.i18n import Language, msg, translate
 
 from mailrecon.core.config import load_settings
@@ -25,6 +26,7 @@ from mailrecon.reporting.exporters import (
     export_markdown,
     export_smtp_lab_markdown,
 )
+from mailrecon.reporting.html import export_html
 from mailrecon.services.dns_service import DnsService
 from mailrecon.services.hibp_service import HibpService
 from mailrecon.services.investigation_service import InvestigationService
@@ -114,6 +116,7 @@ def _run_investigation(
     md_out: Path | None,
     reveal_emails: bool,
     markdown_language: str | Language | None,
+    html_out: Path | None = None,
 ) -> None:
     """Execute the investigation flow shared by CLI and interactive mode."""
     resolve_markdown_language(markdown_language)
@@ -145,6 +148,7 @@ def _run_investigation(
         raise typer.Exit(code=1) from exc
 
     typer.echo(render_investigation_summary(result, mask_sensitive=not reveal_emails, language=language()))
+    _save_html(result, html_out, reveal_emails)
     typer.secho(
         text("cli.refinement_ready", path=result.refinement_file_path),
         fg=typer.colors.BLUE,
@@ -171,6 +175,7 @@ def _run_investigation(
 
 @app.command("analyze", cls=LocalizedCommand)
 def analyze(
+    html_out: Path | None = typer.Option(None, "--html-out", help="Write an offline HTML report."),
     email: str = typer.Argument(..., help="Email address to analyze."),
     json_out: Path | None = typer.Option(
         None,
@@ -209,6 +214,7 @@ def analyze(
         raise typer.Exit(code=1) from exc
 
     typer.echo(render_summary(result, mask_sensitive=not reveal_emails, language=language()))
+    _save_html(result, html_out, reveal_emails)
 
     if json_out is not None:
         export_path = _save_report(export_json, result, json_out, language=language())
@@ -226,6 +232,7 @@ def analyze(
 
 @app.command("investigate", cls=LocalizedCommand)
 def investigate(
+    html_out: Path | None = typer.Option(None, "--html-out", help="Write an offline HTML report."),
     name: list[str] | None = typer.Option(
         None,
         "--name",
@@ -311,11 +318,13 @@ def investigate(
         md_out=md_out,
         reveal_emails=reveal_emails,
         markdown_language=markdown_language,
+        html_out=html_out,
     )
 
 
 @app.command("interactive", cls=LocalizedCommand)
 def interactive(
+    html_out: Path | None = typer.Option(None, "--html-out", help="Write an offline HTML report."),
     json_out: Path | None = typer.Option(
         None,
         "--json-out",
@@ -403,11 +412,13 @@ def interactive(
         md_out=chosen_md_out,
         reveal_emails=reveal_emails,
         markdown_language=chosen_markdown_language,
+        html_out=html_out,
     )
 
 
 @app.command("lab-admin", cls=LocalizedCommand)
 def lab_admin(
+    html_out: Path | None = typer.Option(None, "--html-out", help="Write an offline HTML report."),
     handle: str = typer.Option(..., "--handle", help="Username or handle seed."),
     domain: str = typer.Option("", "--domain", help="Optional domain seed."),
     email: str = typer.Option("", "--email", help="Optional email seed."),
@@ -458,11 +469,14 @@ def lab_admin(
         md_out=md_out,
         reveal_emails=reveal_emails,
         markdown_language=markdown_language,
+        html_out=html_out,
     )
 
 
 @app.command("lab-smtp-validate", cls=LocalizedCommand)
 def lab_smtp_validate(
+    html_out: Path | None = typer.Option(None, "--html-out", help="Write an offline HTML report."),
+    reveal_emails: bool = typer.Option(False, "--reveal-emails", help="Show full email addresses in terminal summaries and Markdown reports."),
     email: str = typer.Argument(..., help="Lab email address to validate."),
     lab_domain: str = typer.Option(
         ...,
@@ -550,14 +564,15 @@ def lab_smtp_validate(
         typer.secho(text("cli.smtp_failed", error=_error_detail(exc)), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(render_smtp_lab_summary(result, language=language()))
+    typer.echo(render_smtp_lab_summary(result, mask_sensitive=not reveal_emails, language=language()))
+    _save_html(result, html_out, reveal_emails)
 
     if json_out is not None:
         export_path = _save_report(export_json, result, json_out, language=language())
         typer.secho(text("cli.json_saved", path=export_path), fg=typer.colors.GREEN)
 
     if md_out is not None:
-        export_path = _save_report(export_smtp_lab_markdown, result, md_out, language=resolve_markdown_language(markdown_language))
+        export_path = _save_report(export_smtp_lab_markdown, result, md_out, language=resolve_markdown_language(markdown_language), mask_sensitive=not reveal_emails)
         typer.secho(text("cli.markdown_saved", path=export_path), fg=typer.colors.GREEN)
 
     if not result.safety_decision.allowed:
@@ -566,6 +581,7 @@ def lab_smtp_validate(
 
 @app.command("rerun-last", cls=LocalizedCommand)
 def rerun_last(
+    html_out: Path | None = typer.Option(None, "--html-out", help="Write an offline HTML report."),
     no_hibp: bool = typer.Option(False, "--no-hibp", help="Skip the optional HIBP lookup."),
     json_out: Path | None = typer.Option(
         None,
@@ -607,6 +623,7 @@ def rerun_last(
         md_out=md_out,
         reveal_emails=reveal_emails,
         markdown_language=markdown_language,
+        html_out=html_out,
     )
 
 
@@ -650,3 +667,12 @@ def _save_report(exporter, result, output: Path, **options) -> Path:
         message = text("cli.export_failed", path=output, error=_error_detail(exc))
         typer.secho(_mask_for_display(message), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
+
+
+def _save_html(result, output: Path | None, reveal_emails: bool) -> None:
+    if output is not None:
+        path = _save_report(export_html, result, output, language=language(), mask_sensitive=not reveal_emails)
+        typer.secho(text("cli.html_saved", path=path), fg=typer.colors.GREEN)
+
+
+register_offline_commands(app)

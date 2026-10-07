@@ -113,6 +113,7 @@ class EvidenceRecord:
     rule_id: str | None = None
     rule_version: str | None = None
     cache_hit: bool = False
+    collection_performed: bool | None = None
 
 
 @dataclass(slots=True)

@@ -213,6 +213,7 @@ class ProfileCheckService:
             evidence_strength=updated.evidence_strength, risk_level=pivot.risk_level,
             decision_reasons=list(updated.decision_reasons), limitations=list(limitations),
             rule_id=updated.rule_id, rule_version=updated.rule_version, cache_hit=cache_hit,
+            collection_performed=bool(observation.checked_at) and not synthetic,
         )
         return updated, evidence
 

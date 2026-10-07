@@ -4,6 +4,40 @@
 
 A Python CLI for ethical OSINT, technical email validation, and authorized defensive investigations. It organizes inputs, hypotheses, and public evidence for human review. It does not confirm a person's identity or the existence of an individual mailbox.
 
+## Offline Artifacts
+
+```bash
+mailrecon --language en sources
+mailrecon --language en demo --output-dir reports/demo-en
+mailrecon demo --output-dir reports
+mailrecon --language en search-links "Fictional Person" --organization "Synthetic Example" --domain example.com --context "authorized research" --after 2026-01-01 --before 2026-10-07 --file-type pdf
+```
+
+`sources` inspects the owned catalog offline. GitHub/GitLab have opt-in official API rules; other sources are manual pivots only. It lists documentation or pivot URL, method and rule version, without a request.
+
+`demo` generates nine deterministic files: `demo-recon`, `demo-investigation`, `demo-smtp`, each in JSON, Markdown and HTML. All data is explicitly synthetic. It performs no DNS/HTTP/HIBP/SMTP and neither reads nor writes refinement or configuration. Use a separate output directory outside sensitive state paths; existing files are never overwritten. `reports/` is Git-ignored. Open `reports/demo-en/demo-investigation.html` directly in a browser for QA; no server is needed.
+
+`search-links` is separate from investigation, preserving its fingerprint and old states. It composes Google links using `urlencode`, without scraping, searches or automatic browser launch. Organization/context terms are literals; each `--domain` creates a separate link. Optional dates must be valid ISO dates in order; file types are restricted to `pdf`, `docx`, `xlsx`, `pptx`, `txt`. Operators are search-engine hints, not guarantees of date, type or coverage. **Generated links are not findings or evidence.** Emails are masked even inside encoded queries; use `--reveal-emails` explicitly for full-address links.
+
+## Local HTML Reports
+
+```bash
+mailrecon --language en analyze person@example.com --no-hibp --html-out reports/analysis.html
+mailrecon --language en investigate --username demo-example --no-hibp --html-out reports/investigation.html
+mailrecon --language en interactive --html-out reports/interactive.html
+mailrecon --language en rerun-last --no-hibp --html-out reports/rerun.html
+mailrecon --language en lab-admin --handle demo-example --html-out reports/lab.html
+mailrecon --language en lab-smtp-validate person@lab.local --lab-domain lab.local --no-network --html-out reports/smtp.html
+```
+
+These commands retain their usual network policy; only `demo`, `sources` and `search-links` are fully offline. `--no-hibp` does not disable DNS. `lab-admin` can perform DNS when given domain/email seeds.
+
+HTML is a static file with scrollable tables, text filtering and hypothesis/observed/synthetic selection. Sources, method, confidence scope, rule/version and timestamps are visible when available; identity is never confirmed. HTML follows `--language`; `--markdown-language` remains Markdown-only. HTML, terminal and Markdown mask emails by default; `--reveal-emails` reveals those outputs. JSON retains full data and must be protected.
+
+HIBP evidence includes optional boolean `collection_performed`: disabled/missing-key states are not collection; negative or inconclusive queries can be observed. Older HIBP records without this metadata are conservatively displayed as hypotheses. The renderer never infers collection from prose. Percent/entity literals without hidden emails or controls are preserved; privacy decoding is applied only when necessary.
+
+Data is escaped, controls neutralized, and full-email hyperlinks are removed in masked mode, including nested encoding. Only credential-free http(s) links can be clicked, with `noopener noreferrer` and a referrer policy. No raw embedded JSON, server, CDN, remote fonts/images or trackers. CSP authorizes only owned CSS/JS hashes; filters read `textContent` and never insert data through `innerHTML`. Clicking a hyperlink is a manual network action by the user. Masking is not anonymization: domain, handle and context can remain identifying.
+
 ## Scope
 
 A portfolio project for security students, defensive analysts, and authorized investigators. It uses format validation, public DNS, and optionally the documented Have I Been Pwned (HIBP) API. It can check suggested public pages without logging in.
@@ -18,7 +52,7 @@ It does not automate login, account recovery, credential testing, abusive enumer
 - `rerun-last`: reuses the saved investigation and manual exclusions.
 - `lab-admin`: simulates profile states without contacting platforms.
 - `lab-smtp-validate`: SMTP simulation or limited checks in a configured lab.
-- JSON and Markdown; Brazilian Portuguese by default, optional English; masking in human-readable analysis/investigation output.
+- JSON, Markdown and offline HTML; Brazilian Portuguese by default, optional English; masking in human-readable output.
 
 ## Installation
 
@@ -171,25 +205,33 @@ src/mailrecon/
   cli/          commands, prompts, language selection
   core/         models, catalogs, validation, configuration, safety
   services/     investigation, DNS, HIBP, profiles, refinement, SMTP labs
-  reporting/    terminal output and JSON/Markdown export
+  reporting/    terminal output and JSON/Markdown/HTML export
 tests/          isolated tests, mocked responses, regressions
 ```
 
 PowerShell:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe scripts/run_offline_tests.py -q
+.\.venv\Scripts\python.exe -m mailrecon.benchmark
 git diff --check
 ```
 
 Linux:
 
 ```bash
-python -m pytest -q
+python scripts/run_offline_tests.py -q
+python -m mailrecon.benchmark
 git diff --check
 ```
 
 Tests use simulations rather than querying people or real services. They cover provenance, DNS/HTTP, confidence, scores, languages, masking, export, refinement, and SMTP controls. They do not replace authorized integration testing or establish statistical accuracy.
+
+`scripts/run_offline_tests.py` blocks outbound sockets, DNS and real SMTP during pytest, and disables `.env`. The owned `mailrecon-owned-synthetic-api-v1` benchmark has 21 positive/negative/ambiguous GitHub/GitLab fixtures, including generic 200, login, soft 404, mismatched handle/URL, blocking and rate limits. Precision and false-positive counts apply **only to these fixtures**, not real-world accuracy or identity.
+
+Owned CI in `.github/workflows/tests.yml` configures Windows/Linux and Python 3.11/3.13, editable dev installation, offline tests, benchmark, wheel/sdist build and installed-wheel smoke. Permissions are `contents: read`, timeout is 15 minutes, no secrets, and checkout does not persist credentials. Actions were verified against official releases: [checkout v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1) and [setup-python v7.0.0](https://github.com/actions/setup-python/releases/tag/v7.0.0), pinned by SHA. Configured CI does not establish successful remote execution. Local build requires `build`, `wheel`, `setuptools>=68`; then run `python -m build --no-isolation` and `python scripts/package_smoke.py`.
+
+The [night report](docs/RELATORIO-NOTURNO-2026-10-07.md) records tests, limitations and pending review/publication. No declared repository license was found; this work does not choose one.
 
 ## Next Steps
 
