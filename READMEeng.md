@@ -126,6 +126,10 @@ mailrecon --language en lab-smtp-validate person@lab.local --lab-domain lab.loca
 
 Networked SMTP requires `MAILRECON_ENABLE_LAB_SMTP=1`, `--confirm-lab-only`, explicit compatible host/domain, and `localhost` or `private-lab` transport. Default: `mock`, up to three probes (`vrfy`, `rcpt`, `expn`). Do not use public services or unauthorized targets. Responses do not prove the existence or control of real mailboxes.
 
+Security compatibility change: allowlisted hostnames are no longer accepted. Literal `localhost` is accepted only with `localhost` transport and connects directly to `127.0.0.1`; that transport only accepts loopback IPs. `private-lab` requires a literal RFC1918, IPv6 ULA, or loopback IP explicitly listed in `MAILRECON_LAB_SMTP_ALLOW_HOSTS`. The allowlist never permits public, link-local, multicast, unspecified, or other special/documentation ranges. No target DNS resolution is performed; connections use the classified IP. Ports 25/465/587 remain blocked outside loopback, and `expn` remains exclusive to `localhost`. Transport/host/domain are normalized before evaluation and execution; whitespace/case variants of `mock` and `--no-network` never open a connection.
+
+SMTP terminal controls are escaped in human-readable terminal/Markdown output; JSON retains the decoded raw reply. Parser errors mask emails in both languages without hiding flags.
+
 ## Configuration
 
 See [.env.example](.env.example).

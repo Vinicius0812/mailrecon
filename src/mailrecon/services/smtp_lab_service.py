@@ -43,6 +43,9 @@ class SmtpLabValidationService:
     ) -> SmtpLabValidationResult:
         """Run lab-only SMTP validation after all safety gates pass."""
         email = _normalize_lab_email(email)
+        transport = transport.strip().lower()
+        host = host.strip().lower()
+        lab_domain = lab_domain.strip().lower().lstrip("@")
 
         normalized_checks = [check.strip().lower() for check in checks if check.strip()]
         safety_decision, resolved_ips = evaluate_smtp_lab_safety(
@@ -151,7 +154,7 @@ class SmtpLabValidationService:
         """Run networked SMTP checks against a safety-approved lab host."""
         checks_run: list[SmtpLabCheckResult] = []
         try:
-            with smtplib.SMTP(host=host, port=port, timeout=self.timeout) as smtp:
+            with smtplib.SMTP(host=resolved_ips[0], port=port, timeout=self.timeout) as smtp:
                 smtp.helo("mailrecon.lab")
                 for check in checks:
                     checks_run.append(self._run_networked_check(smtp, email, check))

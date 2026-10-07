@@ -30,14 +30,14 @@ def evaluate_smtp_lab_safety(
     allow_hosts: list[str],
     enable_lab_smtp: bool,
 ) -> tuple[SafetyDecision, list[str]]:
-    """Validate whether lab-only SMTP checks may run."""
+    """Validate normalized service inputs without resolving DNS."""
     reasons: list[str] = []
     resolved_ips: list[str] = []
 
-    normalized_transport = transport.strip().lower()
+    normalized_transport = transport
     normalized_checks = [check.strip().lower() for check in checks if check.strip()]
-    normalized_host = host.strip().lower()
-    normalized_lab_domain = lab_domain.strip().lower().lstrip("@")
+    normalized_host = host
+    normalized_lab_domain = lab_domain
     email_domain = email.rsplit("@", maxsplit=1)[-1].lower() if "@" in email else ""
 
     if normalized_transport not in allowed_smtp_lab_transports:
@@ -84,7 +84,7 @@ def evaluate_smtp_lab_safety(
     host_ips, host_reasons = _classify_lab_host(
         host=normalized_host,
         transport=normalized_transport,
-        allow_hosts=[item.lower() for item in allow_hosts],
+        allow_hosts=[item.strip().lower() for item in allow_hosts],
     )
     resolved_ips.extend(host_ips)
     reasons.extend(host_reasons)
@@ -134,26 +134,36 @@ def _classify_lab_host(
     allow_hosts: list[str],
 ) -> tuple[list[str], list[str]]:
     """Classify a host without performing public DNS discovery."""
-    if host in {"localhost"}:
-        return ["127.0.0.1", "::1"], []
-
-    if host in allow_hosts:
-        return [host], []
+    if host == "localhost" and transport == "localhost":
+        return ["127.0.0.1"], []
 
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return [], [msg("safety.reason.host_type")]
 
+    if "%" in host or ip.is_multicast or ip.is_unspecified or ip.is_link_local:
+        return [], [msg("safety.reason.private_ip")]
+
     if transport == "localhost":
         if ip.is_loopback:
             return [str(ip)], []
-        return [str(ip)], [msg("safety.reason.loopback")]
+        return [], [msg("safety.reason.loopback")]
 
     if transport == "private-lab":
-        if ip.is_loopback or ip.is_private or ip.is_link_local:
-            return [str(ip)], []
-        return [str(ip)], [msg("safety.reason.private_ip")]
+        networks = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
+        permitted = ip.is_loopback or any(ip in ipaddress.ip_network(net) for net in networks)
+        if not permitted:
+            return [], [msg("safety.reason.private_ip")]
+        allowed_ips = set()
+        for entry in allow_hosts:
+            try:
+                allowed_ips.add(ipaddress.ip_address(entry))
+            except ValueError:
+                continue
+        if ip not in allowed_ips:
+            return [], [msg("safety.reason.allow_hosts")]
+        return [str(ip)], []
 
     return [str(ip)], [msg("safety.reason.host_transport")]
 

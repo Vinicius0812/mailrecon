@@ -126,6 +126,10 @@ mailrecon lab-smtp-validate pessoa@lab.local --lab-domain lab.local --transport 
 
 Rede SMTP exige `MAILRECON_ENABLE_LAB_SMTP=1`, `--confirm-lab-only`, host e domínio explícitos compatíveis e transporte `localhost` ou `private-lab`. Padrão: `mock`, até três sondagens (`vrfy`, `rcpt`, `expn`). Não use serviços públicos ou alvos sem autorização. Respostas não provam existência ou controle de caixas postais reais.
 
+Compatibilidade de segurança: nomes de host na allowlist não são mais aceitos. `localhost` literal só é aceito no transporte `localhost` e conecta diretamente a `127.0.0.1`; esse transporte aceita apenas IPs loopback. `private-lab` exige IP literal RFC1918, IPv6 ULA ou loopback explicitamente listado em `MAILRECON_LAB_SMTP_ALLOW_HOSTS`. A allowlist nunca libera IP público, link-local, multicast, unspecified ou outras faixas especiais/de documentação. Não há resolução DNS do alvo; a conexão usa o IP classificado. Portas 25/465/587 permanecem bloqueadas fora de loopback, e `expn` permanece exclusivo de `localhost`. Transporte/host/domínio são normalizados antes da avaliação e execução; `mock` com espaços/maiúsculas e `--no-network` não abre conexão.
+
+Respostas SMTP têm controles de terminal escapados nas saídas humanas (terminal/Markdown); o JSON mantém a resposta bruta decodificada. Erros do parser mascaram e-mails em ambos os idiomas, sem ocultar flags.
+
 ## Configuração
 
 Veja [.env.example](.env.example).

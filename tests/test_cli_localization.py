@@ -188,6 +188,24 @@ def test_english_interactive_abort_keeps_language():
     assert "Aborted." in result.stderr
 
 
+@pytest.mark.parametrize("locale", ["pt-br", "en"])
+@pytest.mark.parametrize("arguments,flag", [
+    (["analyze", "person@example.com", "fictional@example.com"], None),
+    (["lab-smtp-validate", "person@lab.local", "--lab-domain", "lab.local",
+      "--port", "fictional@example.com"], "--port"),
+    (["fictional@example.com"], None),
+    (["analyze", "person@example.com", "--fictional@example.com"], "--"),
+])
+def test_parser_masks_addresses_without_hiding_flags(locale, arguments, flag):
+    result = CliRunner().invoke(app, ["--language", locale, *arguments])
+    assert result.exit_code == 2
+    assert ("Erro:" if locale == "pt-br" else "Error:") in result.stderr
+    assert "fictional@example.com" not in result.stderr
+    assert "f*******l@example.com" in result.stderr
+    if flag:
+        assert flag in result.stderr
+
+
 @pytest.mark.parametrize("reveal", [False, True])
 def test_export_failure_masks_email_in_path_and_detail(offline, monkeypatch, tmp_path, reveal):
     output = tmp_path / "fictional@example.com" / "report.json"

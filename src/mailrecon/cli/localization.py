@@ -7,6 +7,7 @@ from typer.core import TyperCommand, TyperGroup
 
 from mailrecon.core.catalog_cli import CATALOG
 from mailrecon.core.i18n import Language, localize_message, t
+from mailrecon.reporting.console import _mask_text
 
 
 def language(ctx: click.Context | None = None) -> str:
@@ -120,7 +121,7 @@ class LocalizedGroup(LocalizedHelp, TyperGroup):
             if not standalone:
                 raise
             locale = language(exc.ctx) if isinstance(exc, click.UsageError) else "pt-br"
-            error = parser_error(exc, locale)
+            error = _mask_text(parser_error(exc, locale), preserve_cli_syntax=True)
             click.echo(t("cli.error", language=locale, error=error), err=True)
             raise SystemExit(exc.exit_code) from exc
         except click.Abort as exc:

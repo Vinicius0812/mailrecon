@@ -1,6 +1,7 @@
 """Terminal rendering helpers."""
 
 import re
+import unicodedata
 
 from mailrecon.core.catalog_reporting import CATALOG
 from mailrecon.core.i18n import t, translate
@@ -189,6 +190,7 @@ def render_smtp_lab_summary(
             lines.append(f"  {check.check:<5} {label('status')}={text.human(check.status)}{code}")
             if check.message:
                 reply = _mask_text(check.message) if mask_sensitive else check.message
+                reply = _sanitize_terminal_text(reply)
                 lines.append(f"        {reply}")
     limitations = result.safety_decision.limitations + result.limitations
     if limitations:
@@ -208,6 +210,23 @@ _EMAIL_IN_TEXT = re.compile(
 )
 
 
-def _mask_text(text: str) -> str:
+def _mask_text(text: str, *, preserve_cli_syntax: bool = False) -> str:
     """Mask embedded addresses, including URL/query values, without eating punctuation."""
-    return _EMAIL_IN_TEXT.sub(lambda match: mask_email_address(match.group()), text)
+    def mask(match: re.Match) -> str:
+        value = match.group()
+        prefix = ""
+        if preserve_cli_syntax:
+            while value.startswith(("'", "-")):
+                prefix += value[0]
+                value = value[1:]
+        return prefix + mask_email_address(value)
+
+    return _EMAIL_IN_TEXT.sub(mask, text)
+
+
+def _sanitize_terminal_text(text: str) -> str:
+    """Escape wire controls for display while leaving stored evidence untouched."""
+    return "".join(
+        ascii(char)[1:-1] if unicodedata.category(char) in {"Cc", "Cf"} else char
+        for char in text
+    )

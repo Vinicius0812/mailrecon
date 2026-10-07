@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mailrecon.core.i18n import serialize_localized, translate
 from mailrecon.core.models import InvestigationResult, ReconResult, SmtpLabValidationResult
-from mailrecon.reporting.console import _ReportText, _mask_text
+from mailrecon.reporting.console import _ReportText, _mask_text, _sanitize_terminal_text
 
 
 def export_json(
@@ -128,6 +128,7 @@ def export_smtp_lab_markdown(
             lines.append(f"- {check.check} | {label('status')}={text.human(check.status)}{code}")
             if check.message:
                 reply = _mask_text(check.message) if mask_sensitive else check.message
+                reply = _sanitize_terminal_text(reply)
                 lines.append(f"  - {label('message')}: {reply}")
     _prose_section(lines, text, "limitations", result.safety_decision.limitations + result.limitations)
     return _write_markdown(output_path, lines)
