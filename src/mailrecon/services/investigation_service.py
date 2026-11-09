@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
-from datetime import datetime, timezone
 import re
-from typing import Callable
+from collections import OrderedDict
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from mailrecon.core.i18n import msg
 from mailrecon.core.models import (
@@ -210,7 +210,7 @@ class InvestigationService:
 
     def _build_seed_evidences(self, query: InvestigationInput) -> list[EvidenceRecord]:
         """Convert the starting query into traceable manual evidence."""
-        collected_at = datetime.now(timezone.utc).isoformat()
+        collected_at = datetime.now(UTC).isoformat()
         items = [
             ("name", query.names),
             ("email", [mask_email_address(email) for email in query.emails]),
@@ -573,7 +573,7 @@ class InvestigationService:
         """Create evidence records from one analyzed candidate."""
         assert candidate.analysis is not None
         analysis = candidate.analysis
-        collected_at = datetime.now(timezone.utc).isoformat()
+        collected_at = datetime.now(UTC).isoformat()
 
         evidences = [
             EvidenceRecord(
@@ -651,7 +651,7 @@ class InvestigationService:
             category="domain",
             source="public_dns",
             reference=domain,
-            collected_at=datetime.now(timezone.utc).isoformat(),
+            collected_at=datetime.now(UTC).isoformat(),
             method="dns_lookup",
             confidence="high" if factual_observation else "low",
             confidence_score=80 if factual_observation else 0,

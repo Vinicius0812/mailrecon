@@ -1,8 +1,8 @@
 """Application configuration helpers."""
 
-from dataclasses import dataclass, field
 import math
 import os
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 

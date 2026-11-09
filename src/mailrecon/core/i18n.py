@@ -6,13 +6,13 @@ catalog_services. Metadata uses RFC 6901 JSON Pointers rooted at the result.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import fields, is_dataclass, replace
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from importlib import import_module
-import re
 from string import Formatter
 from typing import Any
 
@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 
-class Language(str, Enum):
+class Language(StrEnum):
     PT_BR = "pt-br"
     EN = "en"
 

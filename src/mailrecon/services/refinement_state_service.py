@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import hashlib
 import json
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from mailrecon.core.i18n import Language, msg, restore_messages, serialize_localized
@@ -77,7 +77,7 @@ class RefinementStateService:
         """Write a simple refinement template that the investigator can revisit."""
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "query_fingerprint": query_fingerprint,
             "query": {
                 "names": query.names,

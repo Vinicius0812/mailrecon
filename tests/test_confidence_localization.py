@@ -1,6 +1,6 @@
 import ast
-from dataclasses import asdict, fields, is_dataclass
 import json
+from dataclasses import asdict, fields, is_dataclass
 from pathlib import Path
 from string import Formatter
 from types import SimpleNamespace
@@ -18,7 +18,6 @@ from mailrecon.services.hibp_service import HibpService
 from mailrecon.services.investigation_service import InvestigationService
 from mailrecon.services.profile_check_service import ProfileCheckService
 from mailrecon.services.recon_service import ReconService
-
 
 RAW_ERROR = "Vendor said: Domain publishes SPF. raw {token}"
 RAW_BREACH = {"Name": "ExampleBreach", "Title": "Domain publishes SPF.", "Description": RAW_ERROR}
@@ -143,7 +142,7 @@ def test_full_real_result_localizes_without_repeating_collection(offline_service
     assert rerendered["profile_pivots"][0]["decision_reasons"][0] == "Gerado como padrão de URL pública para revisão manual."
     assert rerendered["findings"][0] == "alice@example.com apareceu em 1 registro(s) público(s) de vazamento."
     assert all(item == t(original.key, language, **original.parameters)
-               for item, original in zip(localized.limitations, result.limitations))
+               for item, original in zip(localized.limitations, result.limitations, strict=True))
     assert localized.query == query
     assert saved["query"]["organizations"] == ["Domain publishes SPF."]
     assert saved["query"]["contexts"] == [RAW_ERROR]
@@ -163,7 +162,7 @@ def test_full_real_result_localizes_without_repeating_collection(offline_service
     assert domain_evidence.limitations[0] == t("confidence.dns.limitation", language)
     assert any("não comprovam a titularidade" in item["limitations"][0]
                for item in rerendered["evidences"] if item["category"] == "domain")
-    assert all(pivot.profile_url == original.profile_url for pivot, original in zip(localized.profile_pivots, result.profile_pivots))
+    assert all(pivot.profile_url == original.profile_url for pivot, original in zip(localized.profile_pivots, result.profile_pivots, strict=True))
     if mode == "synthetic":
         assert all(pivot.confidence_scope == "synthetic_http_reachability" for pivot in localized.profile_pivots)
         assert all(pivot.limitations[-1] == t("confidence.profile.synthetic_limitation", language)

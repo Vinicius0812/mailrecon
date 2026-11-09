@@ -6,12 +6,17 @@ import click
 import typer
 
 from mailrecon.cli.localization import (
-    LocalizedCommand, LocalizedGroup, confirm, language,
-    markdown_language as resolve_markdown_language, text,
+    LocalizedCommand,
+    LocalizedGroup,
+    confirm,
+    language,
+    text,
 )
-from mailrecon.core.i18n import Language, msg, translate
-
+from mailrecon.cli.localization import (
+    markdown_language as resolve_markdown_language,
+)
 from mailrecon.core.config import load_settings
+from mailrecon.core.i18n import Language, msg, translate
 from mailrecon.core.models import InvestigationInput
 from mailrecon.reporting.console import (
     _mask_text,
@@ -29,8 +34,8 @@ from mailrecon.services.dns_service import DnsService
 from mailrecon.services.hibp_service import HibpService
 from mailrecon.services.investigation_service import InvestigationService
 from mailrecon.services.profile_check_service import ProfileCheckService
-from mailrecon.services.refinement_state_service import RefinementStateService
 from mailrecon.services.recon_service import ReconService
+from mailrecon.services.refinement_state_service import RefinementStateService
 from mailrecon.services.smtp_lab_service import SmtpLabValidationService
 
 app = typer.Typer(

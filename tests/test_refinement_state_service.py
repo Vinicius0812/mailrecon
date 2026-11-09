@@ -1,10 +1,9 @@
 import json
-import pytest
-
 from dataclasses import replace
 
-from mailrecon.core.i18n import msg, translate
+import pytest
 
+from mailrecon.core.i18n import msg, translate
 from mailrecon.core.models import (
     EvidenceRecord,
     InvestigationInput,

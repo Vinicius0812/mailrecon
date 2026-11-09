@@ -1,7 +1,7 @@
-from copy import deepcopy
-from dataclasses import asdict, dataclass, field
 import json
 import pickle
+from copy import deepcopy
+from dataclasses import asdict, dataclass, field
 from string import Formatter
 from types import SimpleNamespace
 
@@ -13,8 +13,16 @@ import pytest
 from mailrecon.core import i18n
 from mailrecon.core.catalog_services import CATALOG as SERVICE_CATALOG
 from mailrecon.core.i18n import (
-    Language, Message, authored, catalog_keys, get_catalog, localize_message,
-    msg, serialize_localized, t, translate,
+    Language,
+    Message,
+    authored,
+    catalog_keys,
+    get_catalog,
+    localize_message,
+    msg,
+    serialize_localized,
+    t,
+    translate,
 )
 from mailrecon.core.models import DnsLookupResult, HibpResult, ReconResult
 from mailrecon.core.validators import validate_email_input

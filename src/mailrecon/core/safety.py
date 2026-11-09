@@ -7,7 +7,6 @@ import ipaddress
 from mailrecon.core.i18n import msg
 from mailrecon.core.models import SafetyDecision
 
-
 allowed_smtp_lab_transports = {"mock", "localhost", "private-lab"}
 allowed_smtp_lab_checks = {"vrfy", "rcpt", "expn"}
 default_smtp_lab_limitations = [

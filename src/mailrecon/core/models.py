@@ -1,7 +1,7 @@
 """Data models used across the application."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from mailrecon.core.i18n import serialize_localized
 
@@ -69,7 +69,7 @@ class ReconResult:
         default_factory=EmailTechnicalAssessment
     )
     generated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
     def to_dict(self, language: str = "pt-br") -> dict:
@@ -185,7 +185,7 @@ class InvestigationResult:
     refinement_file_path: str | None = None
     refinement_excluded_links: list[str] = field(default_factory=list)
     generated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
     def to_dict(self, language: str = "pt-br") -> dict:
@@ -230,7 +230,7 @@ class SmtpLabValidationResult:
     network_used: bool
     limitations: list[str]
     generated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
     def to_dict(self, language: str = "pt-br") -> dict:

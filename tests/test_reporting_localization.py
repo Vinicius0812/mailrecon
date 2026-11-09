@@ -1,7 +1,7 @@
 """Localization, authoritative scores and privacy at report boundaries."""
 
-from dataclasses import replace
 import json
+from dataclasses import replace
 
 import pytest
 

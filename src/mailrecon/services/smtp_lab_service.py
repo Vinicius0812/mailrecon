@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import re
 import smtplib
-import socket
+from datetime import UTC, datetime
 
 from mailrecon.core.i18n import msg
 from mailrecon.core.models import (
@@ -155,7 +154,7 @@ class SmtpLabValidationService:
                 smtp.helo("mailrecon.lab")
                 for check in checks:
                     checks_run.append(self._run_networked_check(smtp, email, check))
-        except (OSError, smtplib.SMTPException, socket.timeout) as exc:
+        except (TimeoutError, OSError, smtplib.SMTPException) as exc:
             checks_run = [
                 SmtpLabCheckResult(
                     check=check,
@@ -237,7 +236,7 @@ class SmtpLabValidationService:
             safety_decision=safety_decision,
             network_used=network_used,
             limitations=list(default_smtp_lab_limitations),
-            generated_at=datetime.now(timezone.utc).isoformat(),
+            generated_at=datetime.now(UTC).isoformat(),
         )
 
 

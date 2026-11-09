@@ -6,6 +6,7 @@ from email_validator import EmailNotValidError, validate_email
 
 from mailrecon.core.i18n import Message, authored, msg
 
+
 def normalize_email_address(email: str) -> str:
     """Validate and normalize an email address."""
     result = validate_email(email, check_deliverability=False)

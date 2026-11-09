@@ -1,6 +1,6 @@
 """Primary orchestration service."""
 
-from typing import Callable
+from collections.abc import Callable
 
 from mailrecon.core.i18n import msg
 from mailrecon.core.models import EmailTechnicalAssessment, ReconResult

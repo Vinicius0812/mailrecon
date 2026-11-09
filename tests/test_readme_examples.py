@@ -1,7 +1,7 @@
 """Keep documented CLI examples runnable without external collection."""
 
-from pathlib import Path
 import shlex
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner

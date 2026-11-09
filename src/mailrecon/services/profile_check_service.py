@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -25,7 +25,7 @@ class ProfileCheckService:
         Do not use login flows, password recovery, hidden endpoints, or any
         automated credential-related path to infer account existence.
         """
-        checked_at = datetime.now(timezone.utc).isoformat()
+        checked_at = datetime.now(UTC).isoformat()
         try:
             with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
                 response = client.get(pivot.profile_url)
@@ -121,7 +121,7 @@ class ProfileCheckService:
             "rate-limited": ("rate_limited", 429),
         }
         status, http_status = scenario_map.get(scenario, ("ambiguous", 200))
-        checked_at = datetime.now(timezone.utc).isoformat()
+        checked_at = datetime.now(UTC).isoformat()
         updated = replace(
             pivot,
             status=self._workflow_status_for_resolution(status),
@@ -173,7 +173,7 @@ class ProfileCheckService:
             category="public_profile",
             source=pivot.platform,
             reference=pivot.profile_url,
-            collected_at=pivot.checked_at or datetime.now(timezone.utc).isoformat(),
+            collected_at=pivot.checked_at or datetime.now(UTC).isoformat(),
             method=method,
             confidence=pivot.confidence,
             confidence_score=pivot.confidence_score,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mailrecon.core.i18n import serialize_localized, translate
 from mailrecon.core.models import InvestigationResult, ReconResult, SmtpLabValidationResult
-from mailrecon.reporting.console import _ReportText, _mask_text
+from mailrecon.reporting.console import _mask_text, _ReportText
 
 
 def export_json(
