@@ -8,3 +8,7 @@ dist/
 build/
 reports/
 .mailrecon-temp/
+.coverage
+coverage.xml
+htmlcov/
+.ruff_cache/

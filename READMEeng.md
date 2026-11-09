@@ -153,16 +153,20 @@ tests/          isolated tests, mocked responses, regressions
 PowerShell:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\ruff.exe check src tests
+.\.venv\Scripts\python.exe -m pytest -q --cov
 git diff --check
 ```
 
 Linux:
 
 ```bash
-python -m pytest -q
+ruff check src tests
+python -m pytest -q --cov
 git diff --check
 ```
+
+GitHub Actions runs lint and tests with coverage (85% minimum) on Linux and Windows, Python 3.11 to 3.14, on every push and pull request to `main`.
 
 Tests use simulations rather than querying people or real services. They cover provenance, DNS/HTTP, confidence, scores, languages, masking, export, refinement, and SMTP controls. They do not replace authorized integration testing or establish statistical accuracy.
 

@@ -153,16 +153,20 @@ tests/          testes isolados, respostas simuladas e regressões
 PowerShell:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\ruff.exe check src tests
+.\.venv\Scripts\python.exe -m pytest -q --cov
 git diff --check
 ```
 
 Linux:
 
 ```bash
-python -m pytest -q
+ruff check src tests
+python -m pytest -q --cov
 git diff --check
 ```
+
+O GitHub Actions executa o lint e os testes com cobertura (mínimo de 85%) em Linux e Windows, nas versões 3.11 a 3.14 do Python, a cada push e pull request para `main`.
 
 Os testes usam simulações, sem consultar pessoas ou serviços reais. Cobrem proveniência, DNS/HTTP, confiança, pontuações, idiomas, mascaramento, exportação, refinamento e controles SMTP. Não substituem validação autorizada de integração nem demonstram acurácia estatística.
 
