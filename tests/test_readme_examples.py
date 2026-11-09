@@ -20,11 +20,11 @@ def test_readme_cli_examples_are_valid(filename, monkeypatch, tmp_path):
     runner = CliRunner()
     examples = [line for line in source.splitlines() if line.startswith("mailrecon ") or line.startswith(".\\.venv\\Scripts\\mailrecon.exe ")]
     assert len(examples) >= 10
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        for example in examples:
-            arguments = shlex.split(example)[1:]
-            answers = "\n".join(["", "person@example.com", "", "", "", "", "", "n", "n", "n"]) + "\n"
-            result = runner.invoke(app, arguments, input=answers)
-            assert result.exit_code == 0, (example, result.stdout, result.stderr, result.exception)
+    monkeypatch.chdir(tmp_path)
+    for example in examples:
+        arguments = shlex.split(example)[1:]
+        answers = "\n".join(["", "person@example.com", "", "", "", "", "", "n", "n", "n"]) + "\n"
+        result = runner.invoke(app, arguments, input=answers)
+        assert result.exit_code == 0, (example, result.stdout, result.stderr, result.exception)
     other = "READMEeng.md" if filename == "README.md" else "README.md"
     assert f"]({other})" in source
