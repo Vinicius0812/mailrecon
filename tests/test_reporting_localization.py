@@ -396,3 +396,58 @@ def test_invalid_candidate_email_field_is_masked(investigation, tmp_path) -> Non
     content = export_investigation_markdown(investigation, tmp_path / "invalid.md").read_text(encoding="utf-8")
     assert "private@" not in content
     assert "- *@ |" in content
+
+
+@pytest.mark.parametrize("language", ["pt-br", "en"])
+def test_markdown_leads_with_readable_results(recon, investigation, smtp, tmp_path, language) -> None:
+    for result, exporter in (
+        (recon, export_markdown),
+        (investigation, export_investigation_markdown),
+        (smtp, export_smtp_lab_markdown),
+    ):
+        content = exporter(result, tmp_path / "report.md", language=language).read_text(encoding="utf-8")
+        assert content.index(t("reporting.quick_results", language)) < content.index(t("reporting.next_steps", language))
+        quick, details = content.split(f"## {t('reporting.technical_details', language)}", 1)
+        assert "user@example.com" not in quick
+        assert "user@example.test" not in quick
+        assert "0/100" not in quick
+        assert details.strip()
+
+
+@pytest.mark.parametrize("status,queried,expected", [
+    ("missing_api_key", False, "plain_breaches_unknown"),
+    ("request_error", True, "plain_breaches_unknown"),
+    ("no_breaches", True, "plain_no_breaches"),
+    ("breaches_found", True, "plain_breaches"),
+])
+def test_quick_results_distinguish_missing_breach_check(recon, tmp_path, status, queried, expected) -> None:
+    recon.hibp = HibpResult(queried=queried, status=status)
+    content = export_markdown(recon, tmp_path / "report.md").read_text(encoding="utf-8")
+    quick = content.split("## Detalhes técnicos", 1)[0]
+    assert t(f"reporting.{expected}", "pt-br") in quick
+    assert t("reporting.plain_mailbox_limit", "pt-br") in quick
+
+
+def test_investigation_preview_is_bounded_sorted_and_keeps_all_details(investigation, tmp_path) -> None:
+    base = investigation.candidate_emails[0]
+    investigation.candidate_emails = [
+        replace(base, email=f"person{index}@example.com", review_priority_score=index,
+                source="name_domain_inference", status="candidate_generated")
+        for index in range(7)
+    ]
+    content = export_investigation_markdown(investigation, tmp_path / "report.md", mask_sensitive=False).read_text(encoding="utf-8")
+    quick, details = content.split("## Detalhes técnicos", 1)
+    assert quick.index("person6@example.com") < quick.index("person2@example.com")
+    assert "person1@example.com" not in quick
+    assert "person0@example.com" in details
+    assert "endereço sugerido; existência não confirmada" in quick
+    assert "possível perfil; precisa de revisão manual" in quick
+    assert "identidades confirmadas" in quick
+
+
+def test_empty_investigation_summary_does_not_claim_absence_of_accounts(investigation, tmp_path) -> None:
+    investigation.candidate_emails = []
+    investigation.profile_pivots = []
+    content = export_investigation_markdown(investigation, tmp_path / "report.md").read_text(encoding="utf-8")
+    assert t("reporting.plain_empty", "pt-br") in content
+    assert "### Principais pistas" not in content

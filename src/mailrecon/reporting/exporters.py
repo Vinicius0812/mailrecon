@@ -47,6 +47,84 @@ def _item_details(lines: list[str], text: _ReportText, item: object) -> None:
             lines.append(f"  - {text.label(label)}: {text.prose(value)}")
 
 
+def _quick_results(lines: list[str], text: _ReportText, results: list[str], actions: list[str]) -> None:
+    """Keep the reading order consistent without hiding the supporting records."""
+    lines.extend([f"## {text.label('quick_results')}", ""])
+    lines.extend(f"- {value}" for value in results)
+    lines.extend(["", f"## {text.label('next_steps')}", ""])
+    lines.extend(f"- {value}" for value in actions)
+
+
+def _technical_details(lines: list[str], text: _ReportText) -> None:
+    lines.extend(["", "---", "", f"## {text.label('technical_details')}", ""])
+
+
+def _recon_summary(result: ReconResult, text: _ReportText) -> tuple[list[str], list[str]]:
+    label = text.label
+    if result.dns.email_acceptance_status == "declares_no_mail":
+        mail = "plain_mail_no"
+    elif result.dns.domain_status == "nxdomain":
+        mail = "plain_domain_missing"
+    elif result.dns.email_acceptance_status == "mx_present" or result.dns.mx_records:
+        mail = "plain_mail_yes"
+    else:
+        mail = "plain_mail_unknown"
+    exposed = result.hibp.queried and result.hibp.status == "breaches_found"
+    if exposed:
+        breaches = label("plain_breaches")
+    elif result.hibp.queried and result.hibp.status == "no_breaches":
+        breaches = label("plain_no_breaches")
+    else:
+        breaches = label("plain_breaches_unknown")
+    summary = [
+        f"{label('email')}: **{text.email(result.email)}**",
+        label("plain_format_ok" if result.is_valid else "plain_format_bad"),
+        label(mail), breaches, label("plain_mailbox_limit"),
+    ]
+    actions = [label("plain_review_address")]
+    if exposed:
+        actions.append(label("plain_breach_action"))
+    return summary, actions
+
+
+def _investigation_summary(lines: list[str], result: InvestigationResult, text: _ReportText) -> None:
+    label = text.label
+    summary = [
+        f"{label('plain_email_count')}: **{len(result.candidate_emails)}**.",
+        f"{label('plain_profile_count')}: **{len(result.profile_pivots)}**.",
+        label("plain_leads_limit"), label("plain_priority_limit"),
+    ]
+    summary.extend(f"{label('plain_finding')}: {text.prose(value)}" for value in result.findings[:3])
+    summary.extend(f"{label('plain_attention')}: {text.prose(value)}" for value in result.risks[:2])
+    if not result.candidate_emails and not result.profile_pivots:
+        summary.append(label("plain_empty"))
+    _quick_results(lines, text, summary, [label("plain_investigation_action")])
+    if result.candidate_emails or result.profile_pivots:
+        lines.extend(["", f"### {label('plain_shortlist')}", "", label("plain_shortlist_limit"), ""])
+    for candidate in sorted(result.candidate_emails, key=lambda item: item.review_priority_score, reverse=True)[:5]:
+        if candidate.status.startswith("rejected") or candidate.status == "invalid":
+            meaning = "plain_email_rejected"
+        elif candidate.source in {"seed_email", "provided_candidate", "seed_candidate"}:
+            meaning = "plain_email_supplied"
+        elif candidate.source in {"username_domain_inference", "name_domain_inference"} or candidate.status == "candidate_generated":
+            meaning = "plain_email_generated"
+        else:
+            meaning = "plain_email_review"
+        lines.append(f"- **{text.email(candidate.email)}** — {label(meaning)}.")
+    for pivot in sorted(result.profile_pivots, key=lambda item: item.review_priority_score, reverse=True)[:5]:
+        if pivot.status == "not_found" or pivot.resolution_status == "rejected_profile_not_found":
+            meaning = "plain_profile_missing"
+        elif pivot.status == "blocked_by_platform" or pivot.resolution_status == "blocked_cannot_determine":
+            meaning = "plain_profile_blocked"
+        elif pivot.status == "ambiguous" or pivot.resolution_status == "ambiguous_requires_review":
+            meaning = "plain_profile_ambiguous"
+        else:
+            meaning = "plain_profile_review"
+        lines.append(f"- **{text.prose(pivot.platform)} ({text.prose(pivot.handle)})** — {label(meaning)}.")
+        if pivot.profile_url:
+            lines.append(f"  - {text.prose(pivot.profile_url)}")
+
+
 def export_markdown(
     result: ReconResult,
     output_path: str | Path,
@@ -58,6 +136,9 @@ def export_markdown(
     text = _ReportText(language, mask_sensitive)
     label = text.label
     lines = [f"# {label('report_title')}", ""]
+    summary, actions = _recon_summary(result, text)
+    _quick_results(lines, text, summary, actions)
+    _technical_details(lines, text)
     rows = [
         ("email", text.email(result.email)),
         ("domain", text.prose(result.domain)),
@@ -108,6 +189,10 @@ def export_smtp_lab_markdown(
     text = _ReportText(language, mask_sensitive)
     label = text.label
     lines = [f"# {label('smtp_title')}", ""]
+    outcome = (f"{label('plain_lab_allowed')}: {len(result.checks_run)}."
+               if result.safety_decision.allowed else label("plain_lab_blocked"))
+    _quick_results(lines, text, [label("lab_only"), outcome], [label("plain_lab_action")])
+    _technical_details(lines, text)
     rows = [
         ("mode", label("lab_only")),
         ("email", text.email(result.email)),
@@ -144,6 +229,8 @@ def export_investigation_markdown(
     text = _ReportText(language, mask_sensitive)
     label = text.label
     lines = [f"# {label('investigation_report_title')}", ""]
+    _investigation_summary(lines, result, text)
+    _technical_details(lines, text)
     rows = [
         ("generated_at", result.generated_at),
         ("review_priority", f"{result.review_priority_score}/100"),
